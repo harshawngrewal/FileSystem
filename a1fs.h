@@ -63,6 +63,10 @@ typedef struct a1fs_superblock {
 	unsigned int   block_bitmap;      /* Blocks bitmap block */
 	unsigned int   inode_bitmap;      /* Inodes bitmap block */
 
+	/* This informaion is useful for a variety of important operations that our file system
+	will do including the basic operations of read,write,open along with other things like 
+	journaling and sanity checks */
+
 } a1fs_superblock;
 
 // Superblock must fit into a single block
@@ -107,10 +111,14 @@ typedef struct a1fs_inode {
 	 */
 	struct timespec mtime;
 	//TODO: add necessary fields
-	unsigned int   i_ctime;       /* Creation time */
+
+	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
+	unsigned int i_ctime;   
 	unsigned int extents[10][2];   /* Pointers to first 10 extents and there size */
-	unsigned int indirect; // pointer to the indirect block(we only need 1 for 512 extents)
-	// total of 10 + 512 = 524 extents which is > 512 which is a little more than we need
+	unsigned int indirect; 
+	
+	/* pointer to the indirect block(we only need 1 for 512 extents)
+	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
 
 	char padding[4];
 
