@@ -53,15 +53,15 @@ typedef struct a1fs_superblock {
 	uint64_t size;
 
 	//TODO: add necessary fields
-	unsigned int   inodes_count;      /* Inodes count */
-	unsigned int   blocks_count;      /* Blocks count */
-	unsigned int   free_blocks_count; /* Free blocks count */
-	unsigned int   free_inodes_count; /* Free inodes count */
-	unsigned int   first_data_block;  /* First Data Block */
-	unsigned int   inode_table;       /* Inodes table block */
-
-	unsigned int   block_bitmap;      /* Blocks bitmap block */
-	unsigned int   inode_bitmap;      /* Inodes bitmap block */
+	uint32_t   inodes_count;      /* Inodes count */
+	uint32_t   blocks_count;      /* Blocks count */
+	uint32_t   free_blocks_count; /* Free blocks count */
+	uint32_t  free_inodes_count; /* Free inodes count */
+	uint32_t  first_data_block;  /* First Data Block */
+	uint32_t   inode_table;       /* Inodes table block */
+	
+	uint32_t  block_bitmap;      /* Blocks bitmap block */
+	uint32_t   inode_bitmap;      /* Inodes bitmap block */
 
 	/* This informaion is useful for a variety of important operations that our file system
 	will do including the basic operations of read,write,open along with other things like 
@@ -113,10 +113,10 @@ typedef struct a1fs_inode {
 	//TODO: add necessary fields
 
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
-	unsigned int i_ctime;   
-	unsigned int extents[10][2];   /* Pointers to first 10 extents and there size */
-	unsigned int indirect; 
-	
+	uint32_t i_ctime;   
+	uint32_t extents[10][2];   /* Pointers to first 10 extents and there size */
+	uint32_t indirect; 
+
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
 
