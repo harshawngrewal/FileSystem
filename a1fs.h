@@ -53,15 +53,15 @@ typedef struct a1fs_superblock {
 	uint64_t size;
 
 	//TODO: add necessary fields
-	uint32_t   inodes_count;      /* Inodes count */
-	uint32_t   blocks_count;      /* Blocks count */
-	uint32_t   free_blocks_count; /* Free blocks count */
-	uint32_t  free_inodes_count; /* Free inodes count */
-	uint32_t  first_data_block;  /* First Data Block */
-	uint32_t   inode_table;       /* Inodes table block */
+	uint32_t inodes_count;      /* Inodes count */
+	uint32_t blocks_count;      /* Blocks count */
+	uint32_t free_blocks_count; /* Free blocks count */
+	uint32_t free_inodes_count; /* Free inodes count */
+	uint32_t first_data_block;  /* First Data Block */
+	uint32_t inode_table;       /* Inodes table block */
 	
-	uint32_t  block_bitmap;      /* Blocks bitmap block */
-	uint32_t   inode_bitmap;      /* Inodes bitmap block */
+	uint32_t block_bitmap;      /* Blocks bitmap block */
+	uint32_t inode_bitmap;      /* Inodes bitmap block */
 
 	/* This informaion is useful for a variety of important operations that our file system
 	will do including the basic operations of read,write,open along with other things like 
