@@ -95,8 +95,12 @@ static bool parse_args(int argc, char *argv[], mkfs_opts *opts)
 /** Determine if the image has already been formatted into a1fs. */
 static bool a1fs_is_present(void *image)
 {
-	//TODO: check if the image already contains a valid a1fs superblock
-	(void)image;
+	// image marks the start of the disk image. If there is a valid disk image present
+	const struct a1fs_superblock *sb = (const struct ext2_super_block *)(image + A1FS_BLOCK_SIZE);
+
+	if(sb->magic != A1FS_MAGIC) 
+		return false;
+
 	return true;
 }
 

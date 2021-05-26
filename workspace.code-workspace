@@ -5,7 +5,15 @@
 		},
 		{
 			"path": "../CSC369-Tuts/tut1"
+		},
+		{
+			"path": "../CSC369-Tuts/tut2"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.associations": {
+			"options.h": "c",
+			"fuse.h": "c"
+		}
+	}
 }
