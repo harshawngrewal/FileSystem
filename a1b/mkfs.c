@@ -96,7 +96,7 @@ static bool parse_args(int argc, char *argv[], mkfs_opts *opts)
 static bool a1fs_is_present(void *image)
 {
 	// image marks the start of the disk image. If there is a valid disk image present
-	const struct a1fs_superblock *sb = (const struct ext2_super_block *)(image + A1FS_BLOCK_SIZE);
+	const struct a1fs_superblock *sb = (const struct ext2_super_block *)(image);
 
 	if(sb->magic != A1FS_MAGIC) 
 		return false;
@@ -120,9 +120,30 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 {
 	//TODO: initialize the superblock and create an empty root directory
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
+
+	// initialize the super block
+	struct a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
+	sb->magic = A1FS_MAGIC;
+	sb->size = size;
+	sb->inodes_count = opts->n_inodes;
+	sb->blocks_count = (sb->size - (3 + sb->inodes_count) * A1FS_BLOCK_SIZE) / A1FS_BLOCK_SIZE;
+	
+	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
+	sb->free_blocks_count = sb->blocks_count;
+
+	sb->inode_table = 3;
+	sb->first_data_block = (3 + sb->inodes_count) * A1FS_BLOCK_SIZE;
+	sb->inode_bitmap = 1;
+	sb->block_bitmap = 2;
+
+	// mmap(image, sizeof(struct a1fs_superblock), PROT_READ | PROT_WRITE, MAP_SHARED, sb, 0);
+
+
+
+
+
+
 	(void)image;
-	(void)size;
-	(void)opts;
 	return false;
 }
 
