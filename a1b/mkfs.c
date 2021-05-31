@@ -22,6 +22,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "a1fs.h"
 #include "map.h"
@@ -121,6 +122,9 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	//TODO: initialize the superblock and create an empty root directory
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
 
+	if(opts->n_inodes * A1FS_BLOCK_SIZE + A1FS_BLOCK_SIZE * 3 > size)
+		return false;
+
 	// initialize the super block
 	struct a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
 	sb->magic = A1FS_MAGIC;
@@ -136,15 +140,29 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_bitmap = 1;
 	sb->block_bitmap = 2;
 
-	// mmap(image, sizeof(struct a1fs_superblock), PROT_READ | PROT_WRITE, MAP_SHARED, sb, 0);
+	((char *)image)[0] = sb; // casted the addresses as a char and then wrote the super block to it
+	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
+	// we must now create the root dir and create an inode and write to the disk image
+	mkdir("rootdir", S_IFDIR | 0777); // guessing this is where the data blocks are stored
 
+	struct a1fs_inode *root_dir_inode = malloc(sizeof(a1fs_inode));
+	root_dir_inode->mode = DIR;
+	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
+	root_dir_inode->links = 1; // the one link to itself
 
+	/* do i have to write the dir entries(in this case the reference to itself twice)
+	root_dir_inode->extents[0][0] = 0;
+	root_dir_inode->extents[0][1] = 1;
+	root_dir_inode->extents[1][0] = 1;
+	root_dir_inode->extents[1][1] = 1; */
 
+	((char *)image)[sb->inode_table * A1FS_BLOCK_SIZE] = root_dir_inode;
 
+	free(sb);
+	free(root_dir_inode);
 
-	(void)image;
-	return false;
+	return true;
 }
 
 
