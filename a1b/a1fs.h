@@ -41,6 +41,10 @@ typedef uint32_t a1fs_blk_t;
 /** Inode number type. */
 typedef uint32_t a1fs_ino_t;
 
+#define    REG_FILE 1    /* Regular File */
+#define    DIR      2    /* Directory File */
+#define    SYMLINK  7    /* Symbolic Link */
+
 
 /** Magic value that can be used to identify an a1fs image. */
 #define A1FS_MAGIC 0xC5C369A1C5C369A1ul
@@ -113,14 +117,13 @@ typedef struct a1fs_inode {
 	//TODO: add necessary fields
 
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
-	uint32_t i_ctime;   
 	uint32_t extents[10][2];   /* Pointers to first 10 extents and there size */
 	uint32_t indirect; 
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
 
-	char padding[4];
+	char padding[6];
 
 } a1fs_inode;
 
