@@ -97,7 +97,7 @@ static bool parse_args(int argc, char *argv[], mkfs_opts *opts)
 static bool a1fs_is_present(void *image)
 {
 	// image marks the start of the disk image. If there is a valid disk image present
-	const struct a1fs_superblock *sb = (const struct ext2_super_block *)(image);
+	struct a1fs_superblock *sb = (struct a1fs_superblock *)(image);
 
 	if(sb->magic != A1FS_MAGIC) 
 		return false;
@@ -140,7 +140,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_bitmap = 1;
 	sb->block_bitmap = 2;
 
-	((char *)image)[0] = sb; // casted the addresses as a char and then wrote the super block to it
+	memccpy(image, sb, 1, sizeof(struct a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
@@ -157,8 +157,9 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->extents[1][0] = 1;
 	root_dir_inode->extents[1][1] = 1; */
 
-	((char *)image)[sb->inode_table * A1FS_BLOCK_SIZE] = root_dir_inode;
+	memccpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, 1, sizeof(struct a1fs_inode));
 
+	
 	free(sb);
 	free(root_dir_inode);
 
