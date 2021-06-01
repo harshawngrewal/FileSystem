@@ -117,8 +117,8 @@ typedef struct a1fs_inode {
 	//TODO: add necessary fields
 
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
-	uint32_t extents[10][2];   /* Pointers to first 10 extents and there size */
-	uint32_t indirect; 
+	a1fs_extent extents[10];
+	uint32_t indirect; // points to an block which will contain
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
@@ -147,3 +147,10 @@ typedef struct a1fs_dentry {
 } a1fs_dentry;
 
 static_assert(sizeof(a1fs_dentry) == 256, "invalid dentry size");
+
+
+typedef struct a1fs_extent{
+	uint32_t start_block;
+	uint32_t length;
+
+} a1fs_extent;
