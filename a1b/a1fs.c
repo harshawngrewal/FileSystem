@@ -113,10 +113,17 @@ static int a1fs_statfs(const char *path, struct statvfs *st)
 	st->f_frsize  = A1FS_BLOCK_SIZE;
 	//TODO: fill in the rest of required fields based on the information stored
 	// in the superblock
-	(void)fs;
-	st->f_namemax = A1FS_NAME_MAX;
+	a1fs_superblock *sb = (a1fs_superblock *)(fs->image);
 
-	return -ENOSYS;
+	st->f_blocks = fs->size / A1FS_BLOCK_SIZE; // size of file system in fragment size units
+	st->f_bfree = sb->free_blocks_count;
+	st->f_bavail = st->f_bfree; // They are the same
+	st->f_files = sb->inodes_count;
+	st->f_ffree = sb->free_inodes_count;
+	st->f_favail = st->f_ffree; // They are the sme
+
+	st->f_namemax = A1FS_NAME_MAX;
+	return 0;
 }
 
 /**

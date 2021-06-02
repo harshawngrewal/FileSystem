@@ -17,13 +17,13 @@
  */
 
 #include "fs_ctx.h"
+#include "a1fs.h" // do not know if I am allowed to add include statements
 
 
 bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
 {
 	fs->image = image;
 	fs->size = size;
-
 	//TODO: check if the file system image can be mounted and initialize its
 	// runtime state
 	return true;

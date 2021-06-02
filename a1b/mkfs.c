@@ -166,8 +166,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
-	mkdir("rootdir", S_IFDIR | 0777); // guessing this is where the data blocks are stored
-
+	mkdir("rootdir", S_IFDIR | 0777); // guessing this is where the contents of our file system will be reflected here
 	struct a1fs_inode *root_dir_inode = malloc(sizeof(a1fs_inode));
 	root_dir_inode->mode = DIR;
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
