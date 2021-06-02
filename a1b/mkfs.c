@@ -105,6 +105,25 @@ static bool a1fs_is_present(void *image)
 	return true;
 }
 
+int integer_division(int num1, int num2){
+
+	return  num1 % num2 > 0 ? num1 / num2 : 1;
+}
+
+void set_block_bitmap(a1fs_superblock *sb){
+	// we have the -1 for superblock. We also pre allocate the indoes
+	int num_blocks_for_bitmap = 1;
+	int unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->inodes_count; 
+
+	while(num_blocks_for_bitmap != integer_division(unallocated_blocks - num_blocks_for_bitmap, num_blocks_for_bitmap *A1FS_BLOCK_SIZE * 8)){
+		num_blocks_for_bitmap ++;
+	}
+
+	sb->block_bitmap.count = num_blocks_for_bitmap;
+	return;
+
+}
+
 
 /**
  * Format the image into a1fs.
@@ -126,21 +145,24 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 		return false;
 
 	// initialize the super block
-	struct a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
+	a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
 	sb->magic = A1FS_MAGIC;
 	sb->size = size;
 	sb->inodes_count = opts->n_inodes;
-	sb->blocks_count = (sb->size - (3 + sb->inodes_count) * A1FS_BLOCK_SIZE) / A1FS_BLOCK_SIZE;
-	
+	sb->blocks_count = sb->size / A1FS_BLOCK_SIZE; 
+
+	sb->inode_bitmap.start = 1;
+	sb->inode_bitmap.count = integer_division(A1FS_BLOCK_SIZE * 8, sb->inodes_count);
+	sb->block_bitmap.count = 1 + sb->inode_bitmap.count;
+	set_block_bitmap(sb); // need to update block bitmap, blocks counts
+
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
-	sb->free_blocks_count = sb->blocks_count;
+	sb->free_blocks_count = sb->blocks_count - 2 - sb->inode_bitmap.count - sb->block_bitmap.count ;
 
-	sb->inode_table = 3;
-	sb->first_data_block = (3 + sb->inodes_count) * A1FS_BLOCK_SIZE;
-	sb->inode_bitmap = 1;
-	sb->block_bitmap = 2;
+	sb->inode_table = sb->block_bitmap.start + sb->block_bitmap.count;
+	sb->first_data_block = sb->inode_table + sb->inodes_count;
 
-	memccpy(image, sb, 1, sizeof(struct a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
+	memccpy(image, sb, 1, sizeof(a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
@@ -151,15 +173,8 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
 	root_dir_inode->links = 1; // the one link to itself
 
-	/* do i have to write the dir entries(in this case the reference to itself twice)
-	root_dir_inode->extents[0][0] = 0;
-	root_dir_inode->extents[0][1] = 1;
-	root_dir_inode->extents[1][0] = 1;
-	root_dir_inode->extents[1][1] = 1; */
-
 	memccpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, 1, sizeof(struct a1fs_inode));
 
-	
 	free(sb);
 	free(root_dir_inode);
 

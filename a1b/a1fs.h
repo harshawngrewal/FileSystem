@@ -49,6 +49,16 @@ typedef uint32_t a1fs_ino_t;
 /** Magic value that can be used to identify an a1fs image. */
 #define A1FS_MAGIC 0xC5C369A1C5C369A1ul
 
+//changed location of this struct(was located right before the inode)
+/** Extent - a contiguous range of blocks. */
+typedef struct a1fs_extent {
+	/** Starting block of the extent. */
+	a1fs_blk_t start;
+	/** Number of blocks in the extent. */
+	a1fs_blk_t count;
+
+} a1fs_extent;
+
 /** a1fs superblock. */
 typedef struct a1fs_superblock {
 	/** Must match A1FS_MAGIC. */
@@ -64,8 +74,9 @@ typedef struct a1fs_superblock {
 	uint32_t first_data_block;  /* First Data Block */
 	uint32_t inode_table;       /* Inodes table block */
 	
-	uint32_t block_bitmap;      /* Blocks bitmap block */
-	uint32_t inode_bitmap;      /* Inodes bitmap block */
+	// we use extent based approach because we do not know how many blocks these bitmaps may take up
+	a1fs_extent block_bitmap;      /* Blocks bitmap block */
+	a1fs_extent inode_bitmap;      /* Inodes bitmap block */
 
 	/* This informaion is useful for a variety of important operations that our file system
 	will do including the basic operations of read,write,open along with other things like 
@@ -77,15 +88,6 @@ typedef struct a1fs_superblock {
 static_assert(sizeof(a1fs_superblock) <= A1FS_BLOCK_SIZE,
               "superblock is too large");
 
-
-/** Extent - a contiguous range of blocks. */
-typedef struct a1fs_extent {
-	/** Starting block of the extent. */
-	a1fs_blk_t start;
-	/** Number of blocks in the extent. */
-	a1fs_blk_t count;
-
-} a1fs_extent;
 
 
 /** a1fs inode. */
@@ -118,7 +120,7 @@ typedef struct a1fs_inode {
 
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
 	a1fs_extent extents[10];
-	uint32_t indirect; // points to an block which will contain
+	uint32_t indirect; // points to an block which will contain 
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
@@ -148,9 +150,3 @@ typedef struct a1fs_dentry {
 
 static_assert(sizeof(a1fs_dentry) == 256, "invalid dentry size");
 
-
-typedef struct a1fs_extent{
-	uint32_t start_block;
-	uint32_t length;
-
-} a1fs_extent;
