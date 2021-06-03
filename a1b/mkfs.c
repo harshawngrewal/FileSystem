@@ -105,22 +105,29 @@ static bool a1fs_is_present(void *image)
 	return true;
 }
 
-int integer_division(int num1, int num2){
-
-	return  num1 % num2 > 0 ? num1 / num2 : 1;
+int ceil_integer_division(int num1, int num2){
+	return  num1 % num2 != 0 ? num1 / num2 + 1 : num1 / num2;
 }
 
-void set_block_bitmap(a1fs_superblock *sb){
+
+
+bool set_block_bitmap(a1fs_superblock *sb){
+	// when will this be false?
 	// we have the -1 for superblock. We also pre allocate the indoes
 	int num_blocks_for_bitmap = 1;
 	int unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->inodes_count; 
 
-	while(num_blocks_for_bitmap != integer_division(unallocated_blocks - num_blocks_for_bitmap, num_blocks_for_bitmap *A1FS_BLOCK_SIZE * 8)){
+	if(unallocated_blocks < 0){
+		return false; // I'm assuming that we need at least 1 data block and 1 data bitmap
+	}
+
+	//unallocated_blokcs - num_blocks_for_bitmap is the number of possible data_blocks we need to account for
+	while(num_blocks_for_bitmap < ceil_integer_division(unallocated_blocks - num_blocks_for_bitmap, num_blocks_for_bitmap * A1FS_BLOCK_SIZE * 8)){
 		num_blocks_for_bitmap ++;
 	}
 
 	sb->block_bitmap.count = num_blocks_for_bitmap;
-	return;
+	return true;
 
 }
 
@@ -141,20 +148,19 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	//TODO: initialize the superblock and create an empty root directory
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
 
-	if(opts->n_inodes * A1FS_BLOCK_SIZE + A1FS_BLOCK_SIZE * 3 > size)
-		return false;
-
 	// initialize the super block
 	a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
 	sb->magic = A1FS_MAGIC;
 	sb->size = size;
 	sb->inodes_count = opts->n_inodes;
-	sb->blocks_count = sb->size / A1FS_BLOCK_SIZE; 
+	sb->blocks_count = sb->size / A1FS_BLOCK_SIZE; // can do this because I know size if block aligned
 
 	sb->inode_bitmap.start = 1;
-	sb->inode_bitmap.count = integer_division(A1FS_BLOCK_SIZE * 8, sb->inodes_count);
-	sb->block_bitmap.count = 1 + sb->inode_bitmap.count;
-	set_block_bitmap(sb); // need to update block bitmap, blocks counts
+	sb->inode_bitmap.count = ceil_integer_division(sb->inodes_count, A1FS_BLOCK_SIZE * 8);
+	sb->block_bitmap.start = 1 + sb->inode_bitmap.count;
+
+	if(!set_block_bitmap(sb))
+		return false; // can't find format the required number of blocks for bitmap into the disk image
 
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
 	sb->free_blocks_count = sb->blocks_count - 2 - sb->inode_bitmap.count - sb->block_bitmap.count ;
@@ -166,7 +172,9 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
-	mkdir("rootdir", S_IFDIR | 0777); // guessing this is where the contents of our file system will be reflected here
+	if (mkdir("/tmp/grewa309", S_IFDIR | 0777) < 0)
+		return false;
+
 	struct a1fs_inode *root_dir_inode = malloc(sizeof(a1fs_inode));
 	root_dir_inode->mode = DIR;
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
