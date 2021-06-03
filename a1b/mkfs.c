@@ -162,7 +162,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_table = sb->block_bitmap.start + sb->block_bitmap.count;
 	sb->first_data_block = sb->inode_table + sb->inodes_count;
 
-	memccpy(image, sb, 1, sizeof(a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
+	memcpy(image, sb, sizeof(a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
@@ -172,7 +172,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
 	root_dir_inode->links = 1; // the one link to itself
 
-	memccpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, 1, sizeof(struct a1fs_inode));
+	memcpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
 
 	free(sb);
 	free(root_dir_inode);
