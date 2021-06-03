@@ -117,7 +117,8 @@ bool set_block_bitmap(a1fs_superblock *sb){
 	int num_blocks_for_bitmap = 1;
 	int unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->inodes_count; 
 
-	if(unallocated_blocks < 0){
+	// right now I am accounting for the fact that we meed at least 1 block_bitmap and data_block
+	if(unallocated_blocks <= 1){
 		return false; // I'm assuming that we need at least 1 data block and 1 data bitmap
 	}
 
@@ -172,8 +173,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
-	if (mkdir("/tmp/grewa309", S_IFDIR | 0777) < 0)
-		return false;
+	mkdir("/tmp/grewa309", S_IFDIR | 0777); // don't know if I should error check
 
 	struct a1fs_inode *root_dir_inode = malloc(sizeof(a1fs_inode));
 	root_dir_inode->mode = DIR;
