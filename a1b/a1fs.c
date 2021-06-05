@@ -120,11 +120,50 @@ static int a1fs_statfs(const char *path, struct statvfs *st)
 	st->f_bavail = st->f_bfree; // They are the same
 	st->f_files = sb->inodes_count;
 	st->f_ffree = sb->free_inodes_count;
-	st->f_favail = st->f_ffree; // They are the sme
+	st->f_favail = st->f_ffree; // They are the same
 
 	st->f_namemax = A1FS_NAME_MAX;
-	return 0;
+	return 0; // in which case do we return errno?
 }
+
+
+int find_dir_entry(int inode_num, char *target_name, fs_ctx *fs){
+	// We can calculate the number of entries this directory has 
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	a1fs_extent *curr_extent; 
+	a1fs_dentry *curr_dentry; // The current entry we are looking at
+
+	// First we check the 10 direct extent blocks then the indirect block 
+	// We are checking 522 which is more than needed
+	for(int i = 0; i < 522; i++){
+		if(i < 10)
+			curr_extent = &inode->extents[i];
+		else{
+			if(inode->indirect <= 0)
+				return -1; // indirect block is not allocated, thus we have checked all possible dentries
+
+			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+		}
+		// if the count is <= 0 is implies that there is no in use extent in that location
+		if(curr_extent->count > 0){
+			// this extent is valid
+			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+				// Each block can fit a max of 16 dentries. Need to check if any match the target
+				for(int k = 0; k < 16; k ++){
+					curr_dentry = (a1fs_dentry *) (fs->image + j * sizeof(A1FS_BLOCK_SIZE) + k * sizeof(a1fs_dentry));
+					
+					if(curr_dentry->ino > 0 && strcmp(target_name, curr_dentry->name))
+						return curr_dentry->ino; // we have found the target directory
+
+				}
+
+			}
+		}
+	}
+
+	return -1; // could not find the dentry 
+}
+
 
 /**
  * Get file or directory attributes.
@@ -171,8 +210,49 @@ static int a1fs_getattr(const char *path, struct stat *st)
 
 	//TODO: lookup the inode for given path and, if it exists, fill in the
 	// required fields based on the information stored in the inode
-	(void)fs;
-	return -ENOSYS;
+
+	if(path[0] != '/') {
+        fprintf(stderr, "Not an absolute path\n");
+        return ENOTDIR; // there is not refernce to the root node in the path
+  }
+
+	char *path_copy = malloc(sizeof(char) * strlen(path));
+  strcpy(path_copy, &path[1]);
+
+	char *stringp = strsep(&path_copy, "/");
+	int curr_node = 0; // root node
+
+	while(path_copy != NULL){
+		if(strlen(stringp) >= A1FS_NAME_MAX)
+			return -ENAMETOOLONG; 
+
+		curr_node = find_dir_entry(curr_node, stringp, fs);
+		if (curr_node == -1){
+				fprintf(stderr, "an element in the path cannot be found\n");
+				return ENOENT;
+		}
+		stringp = strsep(&path_copy, "/");
+	}
+
+	// now we are in on the last element of the path
+	free(path_copy);
+  if(strlen(stringp) >= A1FS_NAME_MAX)
+			return -ENAMETOOLONG; 
+
+	curr_node = find_dir_entry(curr_node, stringp, fs);
+	if (curr_node == -1){
+			fprintf(stderr, "an element in the path cannot be found\n");
+			return ENOENT;
+	}
+	// now we update the stat struct
+	a1fs_inode * final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
+	st->st_mode = final_inode->mode;
+	st->st_nlink = final_inode->links;
+	st->st_size = final_inode->size;
+	st->st_blocks = st->st_size  % 512 != 0 ? st->st_size  / 512 + 1 : st->st_size  / 512; // not sure about this.
+	st->st_mtim = final_inode->mtime; 
+
+	return  0; 
 }
 
 /**
@@ -490,6 +570,5 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Failed to mount the file system\n");
 		return 1;
 	}
-
 	return fuse_main(args.argc, args.argv, &a1fs_ops, &fs);
 }
