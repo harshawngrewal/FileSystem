@@ -164,7 +164,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 		return false; // can't find format the required number of blocks for bitmap into the disk image
 
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
-	sb->free_blocks_count = sb->blocks_count - 2 - sb->inode_bitmap.count - sb->block_bitmap.count ;
+	sb->free_blocks_count = sb->blocks_count - sb->inodes_count - 1 - sb->inode_bitmap.count - sb->block_bitmap.count;
 
 	sb->inode_table = sb->block_bitmap.start + sb->block_bitmap.count;
 	sb->first_data_block = sb->inode_table + sb->inodes_count;
@@ -179,9 +179,11 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->mode = DIR;
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
 	root_dir_inode->links = 1; // the one link to itself
+	root_dir_inode->size = 0; // for now. As this direcory does not have 
+	root_dir_inode->mtime = (struct timespec){0};
+	root_dir_inode->indirect = -1; // no indirect block yet
 
 	memcpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
-
 	free(sb);
 	free(root_dir_inode);
 

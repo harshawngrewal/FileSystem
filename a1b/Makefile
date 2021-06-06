@@ -18,7 +18,7 @@ LDFLAGS := $(shell pkg-config fuse --libs) $(LDFLAGS)
 
 all: a1fs mkfs.a1fs
 
-a1fs: a1fs.o fs_ctx.o map.o options.o
+a1fs: a1fs.o fs_ctx.o map.o options.o helpers.o
 	$(CC) $^ -o $@ $(LDFLAGS)
 
 mkfs.a1fs: map.o mkfs.o
