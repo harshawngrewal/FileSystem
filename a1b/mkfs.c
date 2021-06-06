@@ -150,7 +150,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
 
 	// initialize the super block
-	a1fs_superblock *sb = malloc(sizeof(a1fs_superblock));
+	a1fs_superblock *sb = calloc(1, sizeof(a1fs_superblock));
 	sb->magic = A1FS_MAGIC;
 	sb->size = size;
 	sb->inodes_count = opts->n_inodes;
@@ -160,8 +160,9 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_bitmap.count = ceil_integer_division(sb->inodes_count, A1FS_BLOCK_SIZE * 8);
 	sb->block_bitmap.start = 1 + sb->inode_bitmap.count;
 
-	if(!set_block_bitmap(sb))
+	if(!set_block_bitmap(sb)){
 		return false; // can't find format the required number of blocks for bitmap into the disk image
+	}
 
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
 	sb->free_blocks_count = sb->blocks_count - sb->inodes_count - 1 - sb->inode_bitmap.count - sb->block_bitmap.count;
@@ -173,14 +174,13 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
 
 	// we must now create the root dir and create an inode and write to the disk image
-	mkdir("/tmp/grewa309", S_IFDIR | 0777); // don't know if I should error check
+	mkdir("rootdir", S_IFDIR | 0777); // don't know if I should error check
 
-	struct a1fs_inode *root_dir_inode = malloc(sizeof(a1fs_inode));
-	root_dir_inode->mode = DIR;
+	struct a1fs_inode *root_dir_inode = calloc(1,  sizeof(a1fs_inode));
+	root_dir_inode->mode = S_IFDIR | 0777;
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
 	root_dir_inode->links = 1; // the one link to itself
 	root_dir_inode->size = 0; // for now. As this direcory does not have 
-	root_dir_inode->mtime = (struct timespec){0};
 	root_dir_inode->indirect = -1; // no indirect block yet
 
 	memcpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
