@@ -50,3 +50,44 @@ int find_dir_entry(int inode_num, char *target_name, fs_ctx *fs){
 
 	return -1; // could not find the dentry 
 }
+
+int path_lookup(const char *path, fs_ctx *fs){
+	if (strlen(path) >= A1FS_PATH_MAX) return -ENAMETOOLONG;
+	if(path[0] != '/') {
+		fprintf(stderr, "Not an absolute path\n");
+		return -ENOTDIR; // there is not refernce to the root node in the path
+  }
+
+	char *path_copy = calloc(strlen(path), sizeof(char));
+  strcpy(path_copy, &path[1]); // we do not include the root dir in our path as we know it exists. Otherwise can't mount the file system
+
+	char *stringp = strsep(&path_copy, "/");
+	int curr_node = 0; // root node
+
+	while(path_copy != NULL){
+		if(strlen(stringp) >= A1FS_NAME_MAX)
+			return -ENAMETOOLONG; 
+
+		curr_node = find_dir_entry(curr_node, stringp, fs);
+		if (curr_node == -1){
+				fprintf(stderr, "an element in the path cannot be found\n");
+				return -ENOENT;
+		}
+		stringp = strsep(&path_copy, "/");
+	}
+
+	// now we are in on the last element of the path
+	free(path_copy);
+  if(strlen(stringp) >= A1FS_NAME_MAX)
+			return -ENAMETOOLONG; 
+	if(strcmp(stringp, "") != 0){
+			curr_node = find_dir_entry(curr_node, stringp, fs);	// the path is not the root node
+	}
+
+	if (curr_node == -1){
+			fprintf(stderr, "An element in the path cannot be found\n");
+			return -ENOENT;
+	}
+
+	return curr_node;
+}
