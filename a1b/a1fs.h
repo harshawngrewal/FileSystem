@@ -73,6 +73,7 @@ typedef struct a1fs_superblock {
 	uint32_t free_inodes_count; /* Free inodes count */
 	uint32_t first_data_block;  /* First Data Block */
 	uint32_t inode_table;       /* Inodes table block */
+	// should I make it an extent? I don't think it needed as we can caclulate the offset from inode_table
 	
 	// we use extent based approach because we do not know how many blocks these bitmaps may take up
 	a1fs_extent block_bitmap;      /* Blocks bitmap block */
@@ -87,7 +88,6 @@ typedef struct a1fs_superblock {
 // Superblock must fit into a single block
 static_assert(sizeof(a1fs_superblock) <= A1FS_BLOCK_SIZE,
               "superblock is too large");
-
 
 
 /** a1fs inode. */
@@ -120,12 +120,12 @@ typedef struct a1fs_inode {
 
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
 	a1fs_extent extents[10];
-	uint32_t indirect; // points to an block which will contain 
+	uint32_t indirect; // points to an block which will contain exactly 512 extents
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
 
-	char padding[6];
+	char padding[12];
 
 } a1fs_inode;
 

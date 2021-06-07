@@ -156,20 +156,9 @@ static int a1fs_getattr(const char *path, struct stat *st)
 	fs_ctx *fs = get_fs();
 
 	memset(st, 0, sizeof(*st));
-	if (strcmp(path, "/") == 0) {
-	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + 0 * sizeof(a1fs_inode));
-	st->st_mode = S_IFDIR | 0777;
-	st->st_nlink = final_inode->links;
-	st->st_size = final_inode->size; // does size include inode
-	st->st_blocks = st->st_size % 512 != 0 ? st->st_size  / 512 + 1 + A1FS_BLOCK_SIZE / 512  : st->st_size  / 512 + A1FS_BLOCK_SIZE / 512; // not sure about this.;
-	st->st_mtim = final_inode->mtime; 
-
-	return 0;
-	}
-	
 	if(path[0] != '/') {
-        fprintf(stderr, "Not an absolute path\n");
-        return ENOTDIR; // there is not refernce to the root node in the path
+		fprintf(stderr, "Not an absolute path\n");
+		return ENOTDIR; // there is not refernce to the root node in the path
   }
 
 	char *path_copy = calloc(strlen(path), sizeof(char));
@@ -235,8 +224,8 @@ static int a1fs_getattr(const char *path, struct stat *st)
 static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t offset, struct fuse_file_info *fi)
 {
-	(void)offset;// unused
-	(void)fi;// unused
+	(void)offset; // unused
+	(void)fi; // unused
 	fs_ctx *fs = get_fs();
 
 	//NOTE: This is just a placeholder that allows the file system to be mounted
