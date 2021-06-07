@@ -34,6 +34,8 @@ typedef struct fs_ctx {
 
 	//TODO: useful runtime state of the mounted file system should be cached
 	// here (NOT in global variables in a1fs.c)
+	int inode_table;
+
 
 } fs_ctx;
 

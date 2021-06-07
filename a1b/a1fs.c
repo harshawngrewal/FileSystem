@@ -158,7 +158,7 @@ static int a1fs_getattr(const char *path, struct stat *st)
 	memset(st, 0, sizeof(*st));
 	if(path[0] != '/') {
 		fprintf(stderr, "Not an absolute path\n");
-		return ENOTDIR; // there is not refernce to the root node in the path
+		return -ENOTDIR; // there is not refernce to the root node in the path
   }
 
 	char *path_copy = calloc(strlen(path), sizeof(char));
@@ -174,7 +174,7 @@ static int a1fs_getattr(const char *path, struct stat *st)
 		curr_node = find_dir_entry(curr_node, stringp, fs);
 		if (curr_node == -1){
 				fprintf(stderr, "an element in the path cannot be found\n");
-				return ENOENT;
+				return -ENOENT;
 		}
 		stringp = strsep(&path_copy, "/");
 	}
@@ -183,11 +183,13 @@ static int a1fs_getattr(const char *path, struct stat *st)
 	free(path_copy);
   if(strlen(stringp) >= A1FS_NAME_MAX)
 			return -ENAMETOOLONG; 
+	if(strcmp(stringp, "") != 0){
+			curr_node = find_dir_entry(curr_node, stringp, fs);	// the path is not the root node
+	}
 
-	curr_node = find_dir_entry(curr_node, stringp, fs);
 	if (curr_node == -1){
 			fprintf(stderr, "An element in the path cannot be found\n");
-			return ENOENT;
+			return -ENOENT;
 	}
 	// now we update the stat struct
 	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
