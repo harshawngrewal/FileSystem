@@ -194,20 +194,56 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
 	(void)offset; // unused
 	(void)fi; // unused
-	fs_ctx *fs = get_fs();
 
 	//NOTE: This is just a placeholder that allows the file system to be mounted
 	// without errors. You should remove this from your implementation.
-	if (strcmp(path, "/") == 0) {
-		filler(buf, "." , NULL, 0);
-		filler(buf, "..", NULL, 0);
-		return 0;
-	}
+	// if (strcmp(path, "/") == 0) {
+	// 	filler(buf, "." , NULL, 0);
+	// 	filler(buf, "..", NULL, 0);
+	// 	return 0;
+	// }
+
+	filler(buf, "." , NULL, 0);
+	filler(buf, "..", NULL, 0);
 
 	//TODO: lookup the directory inode for given path and iterate through its
 	// directory entries
-	(void)fs;
-	return -ENOSYS;
+	fs_ctx *fs = get_fs();
+	int curr_node = path_lookup(path, fs);
+	if(curr_node < 0)
+		return curr_node; // path_lookup returned an -error. Shouldn't need this it is already verified
+
+	// We have a valid inode. Now we iterate over it's dentries
+	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
+	a1fs_extent *curr_extent; 
+	a1fs_dentry *curr_dentry;
+
+	for(int i = 0; i < 522; i++){
+		if(i < 10)
+			curr_extent = &final_inode->extents[i];
+		else{
+			if(final_inode->indirect <= 0) // indirect block is not allocated
+				break; 
+			curr_extent = (a1fs_extent *) (fs->image + final_inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+		}
+
+		// if the count is <= 0 is implies that there is no in use extent in that location
+		if(curr_extent->count > 0){
+			// this extent is valid
+			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+				// Each block can fit a max of 16 dentries. Need to check if any match the target
+				for(int k = 0; k < 16; k ++){
+					curr_dentry = (a1fs_dentry *) (fs->image + j * sizeof(A1FS_BLOCK_SIZE) + k * sizeof(a1fs_dentry));
+					
+					if(curr_dentry->ino > 0){ // valid entry
+						filler(buf, curr_dentry->name , NULL, 0);
+					}
+				}
+			}
+		}
+	}
+
+	return 0;
 }
 
 
