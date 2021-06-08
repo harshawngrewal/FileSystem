@@ -26,6 +26,7 @@
 
 #include "a1fs.h"
 #include "map.h"
+#include "helpers.c"
 
 
 /** Command line options. */
@@ -105,22 +106,20 @@ static bool a1fs_is_present(void *image)
 	return true;
 }
 
-int ceil_integer_division(int num1, int num2){
-	return  num1 % num2 != 0 ? num1 / num2 + 1 : num1 / num2;
-}
-
 
 
 bool set_block_bitmap(a1fs_superblock *sb){
 	// when will this be false?
 	// we have the -1 for superblock. We also pre allocate the indoes
-	int num_blocks_for_bitmap = 1;
-	int unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->inodes_count; 
+	uint32_t num_blocks_for_bitmap = 1;
+	uint32_t unallocated_blocks;
 
 	// right now I am accounting for the fact that we meed at least 1 block_bitmap and data_block
-	if(unallocated_blocks <= 1){
+	if(1 + sb->inode_bitmap.count + ceil_integer_division (sb->inodes_count, A1FS_BLOCK_SIZE) >= sb->blocks_count - 2){
 		return false; // I'm assuming that we need at least 1 data block and 1 data bitmap
 	}
+
+	unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - ceil_integer_division (sb->inodes_count, A1FS_BLOCK_SIZE); 
 
 	//unallocated_blokcs - num_blocks_for_bitmap is the number of possible data_blocks we need to account for
 	while(num_blocks_for_bitmap < ceil_integer_division(unallocated_blocks - num_blocks_for_bitmap, num_blocks_for_bitmap * A1FS_BLOCK_SIZE * 8)){

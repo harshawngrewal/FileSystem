@@ -13,7 +13,15 @@
 #include "fs_ctx.h"
 #include "options.h"
 
-int find_dir_entry(int inode_num, char *target_name, fs_ctx *fs){
+uint32_t max(uint32_t num1, uint32_t num2){
+	return num1 ? num1 > num2: num2;
+}
+
+uint32_t ceil_integer_division(uint32_t num1, uint32_t num2){
+	return  num1 % num2 != 0 ? num1 / num2 + 1 : num1 / num2;
+}
+
+uint32_t find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs){
 	// return 0;
 	// We can calculate the number of entries this directory has
 	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
@@ -51,7 +59,7 @@ int find_dir_entry(int inode_num, char *target_name, fs_ctx *fs){
 	return -1; // could not find the dentry 
 }
 
-int path_lookup(const char *path, fs_ctx *fs){
+uint32_t path_lookup(const char *path, fs_ctx *fs){
 	if (strlen(path) >= A1FS_PATH_MAX) return -ENAMETOOLONG;
 	if(path[0] != '/') {
 		fprintf(stderr, "Not an absolute path\n");
@@ -62,7 +70,7 @@ int path_lookup(const char *path, fs_ctx *fs){
   strcpy(path_copy, &path[1]); // we do not include the root dir in our path as we know it exists. Otherwise can't mount the file system
 
 	char *stringp = strsep(&path_copy, "/");
-	int curr_node = 0; // root node
+	uint32_t curr_node = 0; // root node
 
 	while(path_copy != NULL){
 		if(strlen(stringp) >= A1FS_NAME_MAX)
