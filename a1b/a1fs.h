@@ -121,11 +121,12 @@ typedef struct a1fs_inode {
 	/* Creation time is one of the key metadata which should be known and will be displayed when the stat command is used.  */
 	a1fs_extent extents[10];
 	uint32_t indirect; // points to an block which will contain exactly 512 extents
+	uint32_t num_extents;
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
-
-	char padding[12];
+	char type; // either 'D', 'S' or 'F'. Don't know if I need this
+	char padding[7];
 
 } a1fs_inode;
 

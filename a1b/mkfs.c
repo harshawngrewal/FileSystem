@@ -181,6 +181,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->links = 1; // the one link to itself
 	root_dir_inode->size = 0; // for now. As this direcory does not have 
 	root_dir_inode->indirect = 0; // no indirect block yet
+	root_dir_inode->num_extents = 0; // not extents allocated yet
 
 	memcpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
 	free(sb);
