@@ -21,6 +21,7 @@
 #include <stddef.h>
 
 #include "options.h"
+#include "a1fs.h"
 
 
 /**
@@ -34,7 +35,7 @@ typedef struct fs_ctx {
 
 	//TODO: useful runtime state of the mounted file system should be cached
 	// here (NOT in global variables in a1fs.c)
-	int inode_table;
+	a1fs_extent inode_table;
 
 
 } fs_ctx;

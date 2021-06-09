@@ -72,10 +72,7 @@ typedef struct a1fs_superblock {
 	uint32_t free_blocks_count; /* Free blocks count */
 	uint32_t free_inodes_count; /* Free inodes count */
 	uint32_t first_data_block;  /* First Data Block */
-	uint32_t inode_table;       /* Inodes table block */
-	// should I make it an extent? I don't think it needed as we can caclulate the offset from inode_table
-	
-	// we use extent based approach because we do not know how many blocks these bitmaps may take up
+	a1fs_extent inode_table;       /* Inodes table block */
 	a1fs_extent block_bitmap;      /* Blocks bitmap block */
 	a1fs_extent inode_bitmap;      /* Inodes bitmap block */
 
