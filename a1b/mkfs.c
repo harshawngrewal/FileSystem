@@ -108,7 +108,7 @@ static bool a1fs_is_present(void *image)
 
 
 
-bool set_block_bitmap(a1fs_superblock *sb){
+bool init_block_bitmap(a1fs_superblock *sb){
 	// when will this be false?
 	// we have the -1 for superblock. We also pre allocate the indoes
 	uint32_t num_blocks_for_bitmap = 1;
@@ -159,18 +159,22 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_bitmap.count = ceil_integer_division(sb->inodes_count, A1FS_BLOCK_SIZE * 8);
 	sb->block_bitmap.start = 1 + sb->inode_bitmap.count;
 
-	if(!set_block_bitmap(sb)){
+	if(!init_block_bitmap(sb)){
 		return false; // can't find format the required number of blocks for bitmap into the disk image
 	}
 
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir
 	sb->free_blocks_count = sb->blocks_count - sb->inodes_count - 1 - sb->inode_bitmap.count - sb->block_bitmap.count;
-
-	sb->inode_table = sb->block_bitmap.start + sb->block_bitmap.count;
-	sb->first_data_block = sb->inode_table + sb->inodes_count;
+	sb->inode_table.start = sb->block_bitmap.start + sb->block_bitmap.count;
+	sb->inode_table.count = ceil_integer_division(sb->inodes_count * sizeof(a1fs_inode), A1FS_BLOCK_SIZE);
+	sb->first_data_block = sb->inode_table.start + sb->inode_table.count;
 
 	memcpy(image, sb, sizeof(a1fs_superblock)); // Casted the addresses as a char and then wrote the super block to it
-	// Due to mmap this all get's mapped in the virtual memory which is more effiecient
+	memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE, 1, sizeof(char));
+	// update block bitmap to reflect the allocated blocks(bitmaps, superblock, etc)
+	for(int i = 1; i < sb->inode_bitmap.count + sb->block_bitmap.count + sb->inode_table.count; i++){
+		memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE + i, 1, sizeof(char));
+	}
 
 	// we must now create the root dir and create an inode and write to the disk image
 	mkdir("rootdir", S_IFDIR | 0777); // don't know if I should error check
@@ -183,7 +187,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->indirect = 0; // no indirect block yet
 	root_dir_inode->num_extents = 0; // not extents allocated yet
 
-	memcpy(image + sb->inode_table * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
+	memcpy(image + sb->inode_table.start * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
 	free(sb);
 	free(root_dir_inode);
 
