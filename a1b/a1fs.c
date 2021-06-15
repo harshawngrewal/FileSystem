@@ -88,6 +88,48 @@ static fs_ctx *get_fs(void)
 	return (fs_ctx*)fuse_get_context()->private_data;
 }
 
+// helper functions
+static int a1fs_truncate(const char *path, off_t size); // so that helper function does not compain
+
+/**
+ * write the provided dir_entry to the fs under the given target_inode/parent directory
+ *
+ * NOTE: Can assume that parent path exists and is a directory
+ *
+ * @param path  					the abolute path of the parent
+ * @param new_dir_dentry  the entry we have to add to the parent
+ * @param fs  						file system struct
+ * @return       					0 on success and -error
+ */
+int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs){
+	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
+	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
+		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+
+	int res = a1fs_truncate(path, parent_inode->size + sizeof(a1fs_dentry));
+	if(res < 0){
+		return res; // we could not allocate space for whatever reason(inode table full, block table full)
+	}
+
+	// we want to grab it again since we made some changes to its fields
+	parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
+		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode)); 
+
+	// since we did truncate, there is space for this dentry
+	a1fs_extent *last_extent = get_final_extent(parent_inode, fs);
+	uint32_t last_block = last_extent->start + last_extent->count - 1; 
+	uint32_t offset_into_last_block = (parent_inode->size - sizeof(a1fs_dentry)) % A1FS_BLOCK_SIZE;
+
+	memcpy(fs->image + last_block * A1FS_BLOCK_SIZE + offset_into_last_block, new_dir_dentry, sizeof(a1fs_dentry));
+
+	parent_inode->links += 1; // this should only be done if dentry is a dir 
+	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
+	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
+
+	return 0;
+}
+
 
 /**
  * Get file system statistics.
@@ -239,45 +281,6 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			}
 		}
 	}
-
-	return 0;
-}
-
-static int a1fs_truncate(const char *path, off_t size); // so that helper function does not compain
-
-/**
- * write the provided dir_entry to the fs under the given target_inode/parent directory
- *
- * NOTE: Can assume that parent path exists and is a directory
- *
- * @param fs  file system struct
- * @return       0 on success and -error
- */
-int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs){
-	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
-	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
-		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
-
-	int res = a1fs_truncate(path, parent_inode->size + sizeof(a1fs_dentry));
-	if(res < 0){
-		return res; // we could not allocate space for whatever reason(inode table full, block table full)
-	}
-
-	// we want to grab it again since we made some changes to its fields
-	parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
-		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode)); 
-
-	// since we did truncate, there is space for this dentry
-	a1fs_extent *last_extent = get_final_extent(parent_inode, fs);
-	uint32_t last_block = last_extent->start + last_extent->count - 1; 
-	uint32_t offset_into_last_block = (parent_inode->size - sizeof(a1fs_dentry)) % A1FS_BLOCK_SIZE;
-
-	memcpy(fs->image + last_block * A1FS_BLOCK_SIZE + offset_into_last_block, new_dir_dentry, sizeof(a1fs_dentry));
-
-	parent_inode->links += 1; // this should only be done if dentry is a dir 
-	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
-	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
-		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 
 	return 0;
 }
@@ -622,7 +625,6 @@ static int a1fs_write(const char *path, const char *buf, size_t size,
 	(void)fs;
 	return -ENOSYS;
 }
-
 
 static struct fuse_operations a1fs_ops = {
 	.destroy  = a1fs_destroy,
