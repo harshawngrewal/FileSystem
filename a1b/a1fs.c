@@ -91,6 +91,8 @@ static fs_ctx *get_fs(void)
 // helper functions
 static int a1fs_truncate(const char *path, off_t size); // so that helper function does not compain
 
+
+
 /**
  * write the provided dir_entry to the fs under the given target_inode/parent directory
  *
@@ -101,7 +103,7 @@ static int a1fs_truncate(const char *path, off_t size); // so that helper functi
  * @param fs  						file system struct
  * @return       					0 on success and -error
  */
-int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs){
+int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_dir){
 	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
 	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
 		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
@@ -122,7 +124,10 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs){
 
 	memcpy(fs->image + last_block * A1FS_BLOCK_SIZE + offset_into_last_block, new_dir_dentry, sizeof(a1fs_dentry));
 
-	parent_inode->links += 1; // this should only be done if dentry is a dir 
+	if(is_dir){
+		parent_inode->links += 1; // this should only be done if dentry is a dir 
+	}
+
 	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
 	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
 		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
@@ -337,7 +342,7 @@ static int a1fs_mkdir(const char *path, mode_t mode)
 	strcpy(parent_path, path);
 	set_parent_path(parent_path);
 
-	if(add_dir_entry(parent_path, new_dir_dentry, fs) < 0){
+	if(add_dir_entry(parent_path, new_dir_dentry, fs, true) < 0){
 		free(new_dir);
 		free(new_dir_dentry);
 		return -ENOSPC; // couldn't allocate a dir_entry in the indirect block or could not allocate another block in data bitmap
@@ -452,15 +457,23 @@ static int a1fs_unlink(const char *path)
  */
 static int a1fs_utimens(const char *path, const struct timespec times[2])
 {
-	fs_ctx *fs = get_fs();
-
 	//TODO: update the modification timestamp (mtime) in the inode for given
 	// path with either the time passed as argument or the current time,
 	// according to the utimensat man page
-	(void)path;
-	(void)times;
-	(void)fs;
-	return -ENOSYS;
+
+	fs_ctx *fs = get_fs();
+
+	uint32_t file_inode_num = path_lookup(path, fs);
+	a1fs_inode *file_inode = (a1fs_inode *)(fs->image + fs->inode_table.start* A1FS_BLOCK_SIZE + file_inode_num* sizeof(a1fs_inode));
+
+	if(times == NULL || times[1].tv_nsec == UTIME_NOW)
+		clock_gettime(CLOCK_REALTIME, &file_inode->mtime);
+	
+	else if(times[1].tv_nsec != UTIME_OMIT)
+		file_inode->mtime = times[1];
+	
+	// otherwise we do nothing
+	return 0;
 }
 
 /**
