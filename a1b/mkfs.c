@@ -110,23 +110,12 @@ static bool a1fs_is_present(void *image)
 
 bool init_block_bitmap(a1fs_superblock *sb){
 	uint32_t num_blocks_for_bitmap = 1;
-	uint32_t unallocated_blocks;
+	sb->block_bitmap.count = sb->blocks_count / (A1FS_BLOCK_SIZE * 8);
 
-	// right now I am accounting for the fact that we meed at least 1 block_bitmap and data_block
-	if(1 + sb->inode_bitmap.count + sb->inode_table.count >= sb->blocks_count - 2){
-		return false; // I'm assuming that we need at least 1 data block and 1 data bitmap
-	}
+	if(1 + sb->inode_bitmap.count + sb->inode_table.count + sb->block_bitmap.count > sb->blocks_count)
+		return false;
 
-	unallocated_blocks = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->inode_table.count; 
-
-	//unallocated_blokcs - num_blocks_for_bitmap is the number of possible data_blocks we need to account for
-	while(unallocated_blocks - num_blocks_for_bitmap > num_blocks_for_bitmap * A1FS_BLOCK_SIZE * 8){
-		num_blocks_for_bitmap ++;
-	}
-
-	sb->block_bitmap.count = num_blocks_for_bitmap;
 	return true;
-
 }
 
 
@@ -168,29 +157,27 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->first_data_block = sb->inode_table.start + sb->inode_table.count;
 
 	memcpy(image, sb, sizeof(a1fs_superblock));
-	// need to flip the bits in data block bitmap to signal allocated blocks
 
-	for(int i = 0; i < 1 + sb->inode_bitmap.count + sb->block_bitmap.count + sb->inode_table.count; i++){
+	// need to flip the bits in data block bitmap to signal allocated blocks
+	for(uint32_t i = 0; i < 1 + sb->inode_bitmap.count + sb->block_bitmap.count + sb->inode_table.count; i++){
 		char byte = ((char *)image)[sb->block_bitmap.start * A1FS_BLOCK_SIZE + i / 8];
 		byte = byte | (1 << i % 8);
 		memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE + i / 8, &byte, sizeof(char));
 	}
 
-
-
 	// we must now create the root dir inode and write to the disk image
 	struct a1fs_inode *root_dir_inode = calloc(1,  sizeof(a1fs_inode));
 	root_dir_inode->mode = S_IFDIR | 0777;
 	clock_gettime(CLOCK_REALTIME, &root_dir_inode->mtime);
-	root_dir_inode->links = 2; // the one link to itself
-	root_dir_inode->size = 0; // for now. As this direcory does not have 
-	root_dir_inode->indirect = 0; // o indirect block yet
-	root_dir_inode->num_extents = 0; // not extents allocated yet
+	root_dir_inode->links = 2; // .. and . are both links to itself
+	root_dir_inode->size = 0; // for now. As this direcory does not have dentries
+	root_dir_inode->indirect = 0; // no indirect block yet
+	root_dir_inode->num_extents = 0; // no extents allocated yet
 
 	memcpy(image + sb->inode_table.start * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
-	char byte = ((char *)image)[sb->block_bitmap.start * A1FS_BLOCK_SIZE];
+	char byte = ((char *)image)[sb->inode_bitmap.start * A1FS_BLOCK_SIZE];
 	byte = byte | (1 << 0);
-	memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE, &byte, sizeof(char));
+	memcpy(image + sb->inode_bitmap.start * A1FS_BLOCK_SIZE, &byte, sizeof(char));
 
 	free(sb);
 	free(root_dir_inode);
