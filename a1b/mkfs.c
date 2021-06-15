@@ -118,7 +118,7 @@ static bool a1fs_is_present(void *image)
  */
 
 bool init_block_bitmap(a1fs_superblock *sb){
-	sb->block_bitmap.count = sb->blocks_count / (A1FS_BLOCK_SIZE * 8);
+	sb->block_bitmap.count = ceil_integer_division(sb->blocks_count, A1FS_BLOCK_SIZE * 8);
 	if(1 + sb->inode_bitmap.count + sb->inode_table.count + sb->block_bitmap.count > sb->blocks_count)
 		return false;
 	return true;
@@ -140,7 +140,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 {
 	//TODO: initialize the superblock and create an empty root directory
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
-
+	char byte;
 	// initialize the super block
 	a1fs_superblock *sb = calloc(1, sizeof(a1fs_superblock));
 	sb->magic = A1FS_MAGIC;
@@ -159,16 +159,16 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	sb->inode_table.start = sb->block_bitmap.start + sb->block_bitmap.count;
 
 	sb->free_inodes_count = sb->inodes_count - 1; // -1 because we are going to create one for root dir of the file system
-	sb->free_blocks_count = sb->blocks_count - sb->inodes_count - 1 - sb->inode_bitmap.count - sb->block_bitmap.count - sb->inode_table.count;
+	sb->free_blocks_count = sb->blocks_count - 1 - sb->inode_bitmap.count - sb->block_bitmap.count - sb->inode_table.count;
 	sb->first_data_block = sb->inode_table.start + sb->inode_table.count;
 
 	memcpy(image, sb, sizeof(a1fs_superblock));
 
 	// need to flip the bits in data block bitmap to signal allocated blocks
 	for(uint32_t i = 0; i < 1 + sb->inode_bitmap.count + sb->block_bitmap.count + sb->inode_table.count; i++){
-		char byte = ((char *)image)[sb->block_bitmap.start * A1FS_BLOCK_SIZE + i / 8];
-		byte = byte | (1 << i % 8);
-		memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE + i / 8, &byte, sizeof(char));
+		byte = ((char *)image)[sb->block_bitmap.start * A1FS_BLOCK_SIZE + i / 8];
+		byte = byte | (1 << (i % 8));
+		memcpy(image + sb->block_bitmap.start * A1FS_BLOCK_SIZE + (i / 8), &byte, sizeof(char));
 	}
 
 	// we must now create the root dir inode and write to the disk image
@@ -181,7 +181,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->num_extents = 0; // no extents allocated yet
 
 	memcpy(image + sb->inode_table.start * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
-	char byte = ((char *)image)[sb->inode_bitmap.start * A1FS_BLOCK_SIZE];
+	byte = ((char *)image)[sb->inode_bitmap.start * A1FS_BLOCK_SIZE];
 	byte = byte | (1 << 0);
 	memcpy(image + sb->inode_bitmap.start * A1FS_BLOCK_SIZE, &byte, sizeof(char));
 
