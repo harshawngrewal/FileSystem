@@ -114,13 +114,12 @@ static int a1fs_statfs(const char *path, struct statvfs *st)
 	st->f_frsize  = A1FS_BLOCK_SIZE;
 	//TODO: fill in the rest of required fields based on the information stored
 	// in the superblock
-	a1fs_superblock *sb = (a1fs_superblock *)(fs->image);
 
 	st->f_blocks = fs->size / A1FS_BLOCK_SIZE; // size of file system in fragment size units
-	st->f_bfree = sb->free_blocks_count;
+	st->f_bfree = fs->sb->free_blocks_count;
 	st->f_bavail = st->f_bfree; // They are the same
-	st->f_files = sb->inodes_count;
-	st->f_ffree = sb->free_inodes_count;
+	st->f_files = fs->sb->inodes_count;
+	st->f_ffree = fs->sb->free_inodes_count;
 	st->f_favail = st->f_ffree; // They are the same
 
 	st->f_namemax = A1FS_NAME_MAX;
@@ -153,12 +152,12 @@ static int a1fs_statfs(const char *path, struct statvfs *st)
 static int a1fs_getattr(const char *path, struct stat *st)
 {
 	fs_ctx *fs = get_fs();
-	int curr_node = path_lookup(path, fs);
+	long curr_node = path_lookup(path, fs);
 	if(curr_node < 0)
 		return curr_node; // path_lookup returned an error
 
 	// Now we update the stat struct
-	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
+	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
 	st->st_mode = final_inode->mode;
 	st->st_nlink = final_inode->links;
 	st->st_size = final_inode->size; // does size include inode
@@ -209,39 +208,76 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	//TODO: lookup the directory inode for given path and iterate through its
 	// directory entries
 	fs_ctx *fs = get_fs();
-	int curr_node = path_lookup(path, fs);
-	if(curr_node < 0)
-		return curr_node; // path_lookup returned an -error. Shouldn't need this it is already verified
+	long curr_node = path_lookup(path, fs); // can assume that path exists
 
 	// We have a valid inode. Now we iterate over it's dentries
-	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
+	a1fs_inode *final_inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + curr_node * sizeof(a1fs_inode));
 	a1fs_extent *curr_extent; 
 	a1fs_dentry *curr_dentry;
+	uint32_t num_entries_in_block = 16; // default amount unless we in the last block of the last extent
 
-	for(int i = 0; i < 522; i++){
+	for(uint32_t i = 0; i < final_inode->num_extents; i++){
 		if(i < 10)
 			curr_extent = &final_inode->extents[i];
-		else{
-			if(final_inode->indirect <= 0) // indirect block is not allocated
-				break; 
+		else
 			curr_extent = (a1fs_extent *) (fs->image + final_inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
-		}
 
-		// if the count is <= 0 is implies that there is no in use extent in that location
-		if(curr_extent->count > 0){
-			// this extent is valid
-			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
-				// Each block can fit a max of 16 dentries. Need to check if any match the target
-				for(int k = 0; k < 16; k ++){
-					curr_dentry = (a1fs_dentry *) (fs->image + j * sizeof(A1FS_BLOCK_SIZE) + k * sizeof(a1fs_dentry));
-					
-					if(curr_dentry->ino > 0){ // valid entry
-						filler(buf, curr_dentry->name , NULL, 0);
-					}
+
+		// this extent is valid
+		for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+			// Each block can fit a max of 16 dentries. however if we are looking at the last block
+			// it may not have 16 entries
+			if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1){
+				num_entries_in_block = (final_inode->size / sizeof(a1fs_dentry)) % (A1FS_BLOCK_SIZE / sizeof(a1fs_dentry));
+			}
+			for(uint32_t k = 0; k < num_entries_in_block; k ++){
+				curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
+				
+				if(curr_dentry->ino > 0){ // valid entry
+					filler(buf, curr_dentry->name , NULL, 0);
 				}
 			}
 		}
 	}
+
+	return 0;
+}
+
+static int a1fs_truncate(const char *path, off_t size); // so that helper function does not compain
+
+/**
+ * write the provided dir_entry to the fs under the given target_inode/parent directory
+ *
+ * NOTE: Can assume that parent path exists and is a directory
+ *
+ * @param fs  file system struct
+ * @return       0 on success and -error
+ */
+int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs){
+	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
+	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
+		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+
+	int res = a1fs_truncate(path, parent_inode->size + sizeof(a1fs_dentry));
+	if(res < 0){
+		return res; // we could not allocate space for whatever reason(inode table full, block table full)
+	}
+
+	// we want to grab it again since we made some changes to its fields
+	parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
+		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode)); 
+
+	// since we did truncate, there is space for this dentry
+	a1fs_extent *last_extent = get_final_extent(parent_inode, fs);
+	uint32_t last_block = last_extent->start + last_extent->count - 1; 
+	uint32_t offset_into_last_block = (parent_inode->size - sizeof(a1fs_dentry)) % A1FS_BLOCK_SIZE;
+
+	memcpy(fs->image + last_block * A1FS_BLOCK_SIZE + offset_into_last_block, new_dir_dentry, sizeof(a1fs_dentry));
+
+	parent_inode->links += 1; // this should only be done if dentry is a dir 
+	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
+	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 
 	return 0;
 }
@@ -271,10 +307,47 @@ static int a1fs_mkdir(const char *path, mode_t mode)
 	fs_ctx *fs = get_fs();
 
 	//TODO: create a directory at given path with given mode
-	(void)path;
-	(void)mode;
-	(void)fs;
-	return -ENOSYS;
+	a1fs_inode *new_dir = calloc(1, sizeof(a1fs_inode));
+	if(new_dir == NULL)
+		return -ENOMEM;
+
+	new_dir->mode = mode;
+	new_dir->links = 2; // one link it it will be . and the other will be a link to it from parent dir
+	new_dir->size = 0;
+	clock_gettime(CLOCK_REALTIME, &new_dir->mtime);
+	new_dir->indirect = 0;
+	new_dir->num_extents = 0;
+
+	long res = allocate_inode(fs); // will allocate the first empty inode in inode_bitmap
+	if(res < 0){
+		free(new_dir);
+		return -ENOSPC; // can't allocate an inode as all inodes are allocated
+	}	
+
+	// Get the parent dir inode, modify links value and add a dir entry
+	char *new_dir_name = get_dir_name(path);
+	a1fs_dentry *new_dir_dentry = calloc(1, sizeof(a1fs_dentry));
+	strcpy(new_dir_dentry->name, new_dir_name);
+	new_dir_dentry->ino = res;
+
+	char parent_path[strlen(path)];
+	strcpy(parent_path, path);
+	set_parent_path(parent_path);
+
+	if(add_dir_entry(parent_path, new_dir_dentry, fs) < 0){
+		free(new_dir);
+		free(new_dir_dentry);
+		return -ENOSPC; // couldn't allocate a dir_entry in the indirect block or could not allocate another block in data bitmap
+	}
+	
+	// all operation successful, it is now safe to write to the disk
+	set_bitmap(fs->sb->inode_bitmap.start, res, fs, 1);
+	memcpy(fs->image + fs->sb->inode_table.start * A1FS_BLOCK_SIZE +  res * sizeof(a1fs_inode), new_dir, sizeof(a1fs_inode));
+	memcpy(fs->image, fs->sb, sizeof(a1fs_superblock));
+
+	free(new_dir_dentry);
+	free(new_dir);
+	return 0;
 }
 
 /**
@@ -408,12 +481,69 @@ static int a1fs_utimens(const char *path, const struct timespec times[2])
 static int a1fs_truncate(const char *path, off_t size)
 {
 	fs_ctx *fs = get_fs();
+	uint32_t file_inode_num = path_lookup(path, fs);
+	a1fs_inode *file_inode = (a1fs_inode *)(fs->image + fs->inode_table.start* A1FS_BLOCK_SIZE + file_inode_num* sizeof(a1fs_inode));
+	a1fs_extent *final_extent; 
 
 	//TODO: set new file size, possibly "zeroing out" the uninitialized range
-	(void)path;
-	(void)size;
-	(void)fs;
-	return -ENOSYS;
+	if((uint64_t)size < file_inode->size){
+		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE;
+		uint32_t target_num_removed_blocks = file_inode->size < (uint64_t)size + bytes_in_last_block ? 0:\
+		(file_inode->size - size - bytes_in_last_block) / A1FS_BLOCK_SIZE + 1; // +1 for the last block
+		fs->sb->free_blocks_count -= target_num_removed_blocks;
+		
+		if(target_num_removed_blocks > 0){
+			while(target_num_removed_blocks > 0){
+				target_num_removed_blocks -= deallocate_block(file_inode, fs);
+			}
+			// it can be that case that the indirect block is not longer in use
+			if(file_inode->num_extents <= 10 && file_inode->indirect != 0){
+				set_bitmap(fs->sb->block_bitmap.start, file_inode->indirect, fs, false);
+			}
+		}
+	}
+	
+	// have to extend the file size
+	else{
+		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE;
+		uint32_t nonallocated_bytes_last_block = file_inode->size == 0 ? 0: A1FS_BLOCK_SIZE - bytes_in_last_block;
+		uint32_t total_additional_bytes = size - file_inode->size;
+		uint32_t additional_blocks = total_additional_bytes <= nonallocated_bytes_last_block ? 0:\
+		 ceil_integer_division(total_additional_bytes - nonallocated_bytes_last_block, A1FS_BLOCK_SIZE);
+
+		if(additional_blocks > fs->sb->free_blocks_count)
+			return -ENOSPC; // not enough data blocks for the new size of file
+
+		if(file_inode->size == 0){
+			long res = allocate_extent(additional_blocks, file_inode, fs);
+			if(res < 0)
+				return res; // error could not allocate an extent or block for extent
+
+			additional_blocks -= res;
+		}
+
+		final_extent = get_final_extent(file_inode, fs); // the final extent
+		memset(fs->image + (final_extent->start + final_extent->count - 1) * A1FS_BLOCK_SIZE + bytes_in_last_block, 0,\
+			min(total_additional_bytes, nonallocated_bytes_last_block));
+
+
+		if (additional_blocks != 0){
+				// first we try to extend the last block as much as possible
+			uint32_t max_extentsion = extend_extent(additional_blocks, file_inode, final_extent, fs);
+			additional_blocks -= max_extentsion;
+		
+			// now we allocate the new extents
+			while(additional_blocks > 0){
+				additional_blocks -= allocate_extent(additional_blocks, file_inode, fs);
+			}
+		}
+	}
+
+	// rwe rewrite inode since we update size of file and also any changed to fields like num_extents, indirect_block
+	file_inode->size = size;
+	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
+	return 0;
+
 }
 
 

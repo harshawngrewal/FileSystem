@@ -26,7 +26,12 @@ bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
 	fs->size = size;
 	//TODO: check if the file system image can be mounted and initialize its runtime state
 	// Need to things like whether the file system is valid 
+
 	a1fs_superblock *sb = (a1fs_superblock *)(fs->image); // Should I just store the entire superblock as reference
+	fs->sb = sb;
+	if(sb->magic != A1FS_MAGIC)
+		return false; // this disk is not formatted using the file system specified
+
 	fs->inode_table = sb->inode_table; 
 	return true;
 }

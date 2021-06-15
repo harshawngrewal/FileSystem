@@ -72,9 +72,9 @@ typedef struct a1fs_superblock {
 	uint32_t free_blocks_count; /* Free blocks count */
 	uint32_t free_inodes_count; /* Free inodes count */
 	uint32_t first_data_block;  /* First Data Block */
-	a1fs_extent inode_table;       /* Inodes table block */
-	a1fs_extent block_bitmap;      /* Blocks bitmap block */
-	a1fs_extent inode_bitmap;      /* Inodes bitmap block */
+	a1fs_extent inode_table;    /* Inodes table block */
+	a1fs_extent block_bitmap;   /* Blocks bitmap block */
+	a1fs_extent inode_bitmap;   /* Inodes bitmap block */
 
 	/* This informaion is useful for a variety of important operations that our file system
 	will do including the basic operations of read,write,open along with other things like 
@@ -100,7 +100,7 @@ typedef struct a1fs_inode {
 	 * subdirectory (via ".."). The "parent directory" of the root directory
 	 * is the root directory itself.
 	 */
-	uint32_t links;
+	uint32_t links; // links mean the number of references to this inod 
 
 	/** File size in bytes. */
 	uint64_t size;
@@ -122,7 +122,6 @@ typedef struct a1fs_inode {
 
 	/* pointer to the indirect block(we only need 1 for 512 extents)
 	total of 10 + 512 = 524 extents which is > 512 which is a little more than we need which is fine */
-	char type; // either 'D', 'S' or 'F'. Don't know if I need this
 	char padding[7];
 
 } a1fs_inode;
