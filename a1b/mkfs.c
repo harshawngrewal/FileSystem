@@ -107,14 +107,20 @@ static bool a1fs_is_present(void *image)
 }
 
 
+/**
+ * helper function to initalize the block bitmap field in the super block
+ *
+ * NOTE: Must update mtime of the root directory.
+ *
+ * @param 	The superblock struct	
+ * @return	true on success;
+ * 					false on error, e.g. total blocks needed to format disk it more than possible
+ */
 
 bool init_block_bitmap(a1fs_superblock *sb){
-	uint32_t num_blocks_for_bitmap = 1;
 	sb->block_bitmap.count = sb->blocks_count / (A1FS_BLOCK_SIZE * 8);
-
 	if(1 + sb->inode_bitmap.count + sb->inode_table.count + sb->block_bitmap.count > sb->blocks_count)
 		return false;
-
 	return true;
 }
 
