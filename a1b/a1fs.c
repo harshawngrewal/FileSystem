@@ -135,6 +135,69 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 	return 0;
 }
 
+/**
+ * Helper function which intializes and creates an inode wether that be a directory or 
+ * a file
+ *
+ * Assumptions (already verified by FUSE using getattr() calls):
+ *   "path" doesn't exist.
+ *   The parent directory of "path" exists and is a directory.
+ *   "path" and its components are not too long.
+ *
+ * Errors:
+ *   ENOMEM  not enough memory (e.g. a malloc() call failed).
+ *   ENOSPC  not enough free space in the file system.
+ *
+ * @param path  path to the directory or file which we have to create
+ * @return      0 on success; -errno on error.
+ */
+int init_inode(const char *path, mode_t mode, fs_ctx *fs){
+
+	//TODO: create a directory at given path with given mode
+	a1fs_inode *inode = calloc(1, sizeof(a1fs_inode));
+	if(inode == NULL)
+		return -ENOMEM;
+
+	inode->mode = mode;
+	inode->links = S_ISREG(mode) ? 1 : 2; // default links for a file or directory
+	inode->size = 0;
+	clock_gettime(CLOCK_REALTIME, &inode->mtime);
+	inode->indirect = 0;
+	inode->num_extents = 0;
+
+	long res = allocate_inode(fs); // will allocate the first empty inode in inode_bitmap
+	if(res < 0){
+		free(inode);
+		return -ENOSPC; // can't allocate an inode as all inodes are allocated
+	}	
+
+	// Get the parent dir inode, modify links value and add a dir entry
+	char *last_component = get_last_component(path);
+	a1fs_dentry *new_dir_dentry = calloc(1, sizeof(a1fs_dentry));
+	strcpy(new_dir_dentry->name, last_component);
+	new_dir_dentry->ino = res;
+
+	char parent_path[strlen(path)];
+	strcpy(parent_path, path);
+	set_parent_path(parent_path);
+
+	if(add_dir_entry(parent_path, new_dir_dentry, fs, true) < 0){
+		free(inode);
+		free(new_dir_dentry);
+		return -ENOSPC; // couldn't allocate a dir_entry in the indirect block or could not allocate another block in data bitmap
+	}
+	
+	// all operation successful, it is now safe to write to the disk
+	set_bitmap(fs->sb->inode_bitmap.start, res, fs, 1);
+	memcpy(fs->image + fs->sb->inode_table.start * A1FS_BLOCK_SIZE +  res * sizeof(a1fs_inode), inode, sizeof(a1fs_inode));
+	memcpy(fs->image, fs->sb, sizeof(a1fs_superblock));
+
+	free(new_dir_dentry);
+	free(inode);
+
+	return 0;
+}
+
 
 /**
  * Get file system statistics.
@@ -313,49 +376,7 @@ static int a1fs_mkdir(const char *path, mode_t mode)
 {
 	mode = mode | S_IFDIR;
 	fs_ctx *fs = get_fs();
-
-	//TODO: create a directory at given path with given mode
-	a1fs_inode *new_dir = calloc(1, sizeof(a1fs_inode));
-	if(new_dir == NULL)
-		return -ENOMEM;
-
-	new_dir->mode = mode;
-	new_dir->links = 2; // one link it it will be . and the other will be a link to it from parent dir
-	new_dir->size = 0;
-	clock_gettime(CLOCK_REALTIME, &new_dir->mtime);
-	new_dir->indirect = 0;
-	new_dir->num_extents = 0;
-
-	long res = allocate_inode(fs); // will allocate the first empty inode in inode_bitmap
-	if(res < 0){
-		free(new_dir);
-		return -ENOSPC; // can't allocate an inode as all inodes are allocated
-	}	
-
-	// Get the parent dir inode, modify links value and add a dir entry
-	char *new_dir_name = get_dir_name(path);
-	a1fs_dentry *new_dir_dentry = calloc(1, sizeof(a1fs_dentry));
-	strcpy(new_dir_dentry->name, new_dir_name);
-	new_dir_dentry->ino = res;
-
-	char parent_path[strlen(path)];
-	strcpy(parent_path, path);
-	set_parent_path(parent_path);
-
-	if(add_dir_entry(parent_path, new_dir_dentry, fs, true) < 0){
-		free(new_dir);
-		free(new_dir_dentry);
-		return -ENOSPC; // couldn't allocate a dir_entry in the indirect block or could not allocate another block in data bitmap
-	}
-	
-	// all operation successful, it is now safe to write to the disk
-	set_bitmap(fs->sb->inode_bitmap.start, res, fs, 1);
-	memcpy(fs->image + fs->sb->inode_table.start * A1FS_BLOCK_SIZE +  res * sizeof(a1fs_inode), new_dir, sizeof(a1fs_inode));
-	memcpy(fs->image, fs->sb, sizeof(a1fs_superblock));
-
-	free(new_dir_dentry);
-	free(new_dir);
-	return 0;
+	return init_inode(path, mode, fs);
 }
 
 /**
@@ -382,6 +403,7 @@ static int a1fs_rmdir(const char *path)
 	return -ENOSYS;
 }
 
+
 /**
  * Create a file.
  *
@@ -407,11 +429,7 @@ static int a1fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 	assert(S_ISREG(mode));
 	fs_ctx *fs = get_fs();
 
-	//TODO: create a file at given path with given mode
-	(void)path;
-	(void)mode;
-	(void)fs;
-	return -ENOSYS;
+	return init_inode(path, mode, fs);
 }
 
 /**
