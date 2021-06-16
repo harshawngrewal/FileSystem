@@ -91,8 +91,6 @@ static fs_ctx *get_fs(void)
 // helper functions
 static int a1fs_truncate(const char *path, off_t size); // so that helper function does not compain
 
-
-
 /**
  * write the provided dir_entry to the fs under the given target_inode/parent directory
  *
@@ -107,7 +105,47 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
 	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
 		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	a1fs_extent *curr_extent; 
+	a1fs_dentry *curr_dentry; // The current entry we are looking at
+	
+	// have to loop every single block and every single dentry to find any empty location
+	// if we can't find an empty location we use truncate to extend the file
+	for(uint32_t i = 0; i < parent_inode->num_extents; i++){
+		if(i < 10)
+			curr_extent = &parent_inode->extents[i];
+		else
+			curr_extent = (a1fs_extent *) (fs->image + parent_inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+		// if the count is <= 0 is implies that there is no in use extent in that location
 
+		if(curr_extent->count > 0){
+			// this extent is valid and is not empty
+			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+				// we act like there are 16 dentries because we null blocks before we allocate a block to a inode extent
+				for(int k = 0; k < 16; k ++){
+					curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
+					
+					if(curr_dentry->ino == 0){
+						// we found a dentry that is not in sue
+						memcpy(fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry), new_dir_dentry, sizeof(a1fs_dentry));
+						parent_inode->size += sizeof(a1fs_dentry);
+						if(is_dir){
+							parent_inode->links += 1; // this should only be done if dentry is a dir 
+						}
+
+						clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
+						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+							sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
+
+						return 0; // sucess
+					}
+				}
+
+			}
+		}
+	}
+
+	// otherwise we are going to have allocate another block, maybe another extent and maybe even indirect
+	// block, so we use out truncate method as it does that for us
 	int res = a1fs_truncate(path, parent_inode->size + sizeof(a1fs_dentry));
 	if(res < 0){
 		return res; // we could not allocate space for whatever reason(inode table full, block table full)
@@ -135,6 +173,9 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 	return 0;
 }
 
+
+
+
 /**
  * Helper function which intializes and creates an inode wether that be a directory or 
  * a file
@@ -153,7 +194,6 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
  */
 int init_inode(const char *path, mode_t mode, fs_ctx *fs){
 
-	//TODO: create a directory at given path with given mode
 	a1fs_inode *inode = calloc(1, sizeof(a1fs_inode));
 	if(inode == NULL)
 		return -ENOMEM;
@@ -184,7 +224,7 @@ int init_inode(const char *path, mode_t mode, fs_ctx *fs){
 	if(add_dir_entry(parent_path, new_dir_dentry, fs, true) < 0){
 		free(inode);
 		free(new_dir_dentry);
-		return -ENOSPC; // couldn't allocate a dir_entry in the indirect block or could not allocate another block in data bitmap
+		return -ENOSPC; // couldn't allocate a dir_entry
 	}
 	
 	// all operation successful, it is now safe to write to the disk
@@ -546,6 +586,8 @@ static int a1fs_truncate(const char *path, off_t size)
 		uint32_t additional_blocks = total_additional_bytes <= nonallocated_bytes_last_block ? 0:\
 		 ceil_integer_division(total_additional_bytes - nonallocated_bytes_last_block, A1FS_BLOCK_SIZE);
 
+		 uint32_t copy_additional_blocks = additional_blocks;
+
 		if(additional_blocks > fs->sb->free_blocks_count)
 			return -ENOSPC; // not enough data blocks for the new size of file
 
@@ -565,10 +607,19 @@ static int a1fs_truncate(const char *path, off_t size)
 		if (additional_blocks != 0){
 				// first we try to extend the last block as much as possible
 			uint32_t max_extentsion = extend_extent(additional_blocks, file_inode, final_extent, fs);
-			additional_blocks -= max_extentsion;
-		
+			additional_blocks -= max_extentsion;	
 			// now we allocate the new extents
 			while(additional_blocks > 0){
+
+				// edge cases needs to be tested
+				if((file_inode->num_extents + 1 == 10 && additional_blocks + 1 > fs->sb->free_blocks_count) || file_inode->num_extents > 512){
+						// have to reverse the changes we made by calling truncate recrusively
+						file_inode->size = file_inode->size + (copy_additional_blocks - additional_blocks) * A1FS_BLOCK_SIZE + nonallocated_bytes_last_block;
+						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
+						a1fs_truncate(path, file_inode->size - (copy_additional_blocks - additional_blocks) * A1FS_BLOCK_SIZE + nonallocated_bytes_last_block);
+						return -ENOSPC;
+				}
+
 				additional_blocks -= allocate_extent(additional_blocks, file_inode, fs);
 			}
 		}

@@ -179,7 +179,7 @@ void set_bitmap(uint32_t bitmap_block, uint32_t offset, fs_ctx *fs , bool set){
 	memcpy(fs->image, fs->sb, sizeof(a1fs_superblock));
 
 	if(set && fs->sb->block_bitmap.start == bitmap_block){
-		memset(fs->image + offset * A1FS_BLOCK_SIZE, 0, A1FS_BLOCK_SIZE);
+		memset(fs->image + offset * A1FS_BLOCK_SIZE, 0, A1FS_BLOCK_SIZE);// nulls the entire block
 	}
 	
 } 
@@ -331,21 +331,7 @@ long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 		}
 	}
 
-	if(inode->num_extents + 1 == 10 && longest_extent.count + 1 > fs->sb->free_blocks_count)
-		return -ENOSPC; // we will need to allocate an indirect block but it is not possible
-
 	
-	inode->num_extents += 1; // we have created a new extent
-
-	// can safely write to disk
-	if(inode->num_extents == 10){
-		long res = allocate_block(fs);
-		if(res < 0)
-			return res; //abandon operation as we could not allocate and indirect block to store extent
-
-		inode->indirect = res;
-		set_bitmap(fs->sb->block_bitmap.start, res, fs, true);
-	}
 
 	// we should now loop over extent blocks and allocate them
 	curr_block = longest_extent.start;
@@ -359,6 +345,19 @@ long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 			}
 		}
 	}
+	
+	// can assume there is a free block to for a indirect block if needed
+	inode->num_extents += 1; // we have created a new extent
+
+	if(inode->num_extents == 10){
+		long res = allocate_block(fs);
+		if(res < 0)
+			return res; //abandon operation as we could not allocate and indirect block to store extent
+
+		inode->indirect = res;
+		set_bitmap(fs->sb->block_bitmap.start, res, fs, true);
+	}
+
 
 	if (inode->num_extents <= 10)
 		inode->extents[inode->num_extents - 1] = longest_extent; // don't need to write to disk
@@ -431,8 +430,3 @@ void set_parent_path(char *path){
 		ptr[0] = '\0'; // removes the last component of the path to give the path of the parent node
 
 }
-
-
-
-
-
