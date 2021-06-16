@@ -12,7 +12,7 @@ uint32_t extend_extent(uint32_t max_blocks, a1fs_inode *inode, a1fs_extent *exte
 long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs);
 int deallocate_block(a1fs_inode *inode, fs_ctx *fs);
 
-char* get_dir_name(const char *abs_path);
+char* get_last_component(const char *abs_path);
 void set_parent_path(char *path);
 long allocate_inode(fs_ctx *fs);
 long allocate_block(fs_ctx *fs);

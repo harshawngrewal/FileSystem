@@ -193,32 +193,36 @@ void set_bitmap(uint32_t bitmap_block, uint32_t offset, fs_ctx *fs , bool set){
  */
 
 long allocate_inode(fs_ctx *fs){
-
 	// loop over the inode bitmap
-	uint32_t count = 0;
-	while(count < fs->sb->inode_bitmap.count * A1FS_BLOCK_SIZE){
-		char curr_byte =  ((char *)fs->image)[fs->sb->inode_bitmap.start * A1FS_BLOCK_SIZE + count];
-		for(int i = 0; i < 8; i++){
-			if((curr_byte & (1 << i)) == 0)
-				return count * 8 + i;
+	uint32_t curr_block = 0;
+	char curr_byte;
+	while(curr_block < fs->sb->inodes_count){
+		curr_byte = ((char *)fs->image)[fs->sb->inode_bitmap.start * A1FS_BLOCK_SIZE + (curr_block) / 8];
+		for(int i = curr_block % 8; i < 8 && curr_block < fs->sb->inodes_count; i++){ 
+			// loop from last_block + 1 to 7 as that represents the 8 bits in byte
+			if((curr_byte & (1 << i)) == 0){
+				return curr_block;
+			}
+			curr_block += 1;
 		}
-		count += 1;
 	}
 
 	return -1;
-
 }
 
 long allocate_block(fs_ctx *fs){
 	// loop over the inode bitmap
-	uint32_t count = 0;
-	while(count < fs->sb->block_bitmap.count * A1FS_BLOCK_SIZE){
-		char curr_byte =  ((char *)fs->image)[fs->sb->block_bitmap.start * A1FS_BLOCK_SIZE + count];
-		for(int i = 0; i < 8; i++){
-			if((curr_byte & (1 << i)) == 0)
-				return count * 8 + i;
+	uint32_t curr_block = 0;
+	char curr_byte;
+	while(curr_block < fs->sb->blocks_count){
+		curr_byte = ((char *)fs->image)[fs->sb->block_bitmap.start * A1FS_BLOCK_SIZE + (curr_block) / 8];
+		for(int i = curr_block % 8; i < 8 && curr_block < fs->sb->blocks_count; i++){ 
+			// loop from last_block + 1 to 7 as that represents the 8 bits in byte
+			if((curr_byte & (1 << i)) == 0){
+				return curr_block;
+			}
+			curr_block += 1;
 		}
-		count += 1;
 	}
 
 	return -1;
@@ -394,7 +398,7 @@ int deallocate_block( a1fs_inode *inode, fs_ctx *fs){
  * @param abs_path	the path for the directory or inode
  * 
  */
-char* get_dir_name(const char *abs_path){
+char* get_last_component(const char *abs_path){
 	char *ptr = strrchr(abs_path, '/');
 	return &ptr[1]; // don't have to error check since we are assured that the path is valid
 }
