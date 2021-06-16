@@ -302,21 +302,21 @@ long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 		curr_byte = ((char *)fs->image)[fs->sb->block_bitmap.start * A1FS_BLOCK_SIZE + curr_block / 8];
 		for(int i = 0; i < 8 && curr_block < fs->sb->blocks_count; i++){
 
-			if(curr_extent.count >= max_blocks){
-				longest_extent = curr_extent;
-				cont = 1; // so that we can break out of the outer while loop
-				break; // we don't care about if we can find a longer extent
-			}
-
 			if((curr_byte & (1 << i)) == 0) 
 				curr_extent.count += 1;
-			
+
 			else{
 				if(curr_extent.count > longest_extent.count){
 					longest_extent = curr_extent;
 				}
 				curr_extent.count = 0;
 				curr_extent.start = curr_block + 1;
+			}
+
+			if(curr_extent.count >= max_blocks){
+				longest_extent = curr_extent;
+				cont = 1; // so that we can break out of the outer while loop
+				break; // we don't care about if we can find a longer extent
 			}
 
 			curr_block += 1;
