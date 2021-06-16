@@ -338,7 +338,7 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			// Each block can fit a max of 16 dentries. however if we are looking at the last block
 			// it may not have 16 entries
 			if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1){
-				num_entries_in_block = (final_inode->size / sizeof(a1fs_dentry)) % (A1FS_BLOCK_SIZE / sizeof(a1fs_dentry));
+				num_entries_in_block = final_inode->size % (A1FS_BLOCK_SIZE / sizeof(a1fs_dentry));
 			}
 			for(uint32_t k = 0; k < num_entries_in_block; k ++){
 				curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
