@@ -246,30 +246,38 @@ uint32_t extend_extent(uint32_t max_blocks, a1fs_inode *inode, a1fs_extent *exte
 
 	// find the byte in the bitmap where we start looking for contig blocks
 	uint32_t curr_block = last_block + 1;
+	uint32_t count = 0;
+
 	while(curr_block < fs->sb->blocks_count && cont == 0){
 		byte = ((char *)fs->image)[fs->sb->block_bitmap.start * A1FS_BLOCK_SIZE + (curr_block) / 8];
-		for(int i = curr_block % 8; i < 8 && curr_block < max_blocks; i++){ 
+		for(int i = curr_block % 8; i < 8 && curr_block < fs->sb->blocks_count; i++){ 
 			// loop from curr_block to 7 as that represents the 8 bits in byte
 			if((byte & (1 << i)) == 0){
 				set_bitmap(fs->sb->block_bitmap.start, curr_block, fs, true);
-				curr_block += 1;
+				count += 1;
 			}
 			else{
 				cont = 1; // we have found the maximum blocks by which we can extend our inode
 				break;
-			}	
+			}
+			if(count >= max_blocks){
+				cont = 1; // so that we can break out of the outer while loop
+				break; // we don't care about if we can find a longer extent
+			}
+
+			curr_block += 1;
 		}
 	}
 
 	// Update the extent a re-write it back to the disk
-	extent->count += curr_block  - 1 - last_block ; // we do -1 to account for last increment
+	extent->count += count;
 	if (inode->num_extents <= 10)
 		inode->extents[inode->num_extents - 1] = *extent; // don't need to write to disk
 	else
 		memcpy(fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (inode->num_extents - 10 - 1)\
 			 * sizeof(a1fs_extent), extent, sizeof(a1fs_extent));
 
-	return curr_block  - 1 - last_block;
+	return count;
 }
 
 /**
@@ -344,7 +352,7 @@ long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 	while(curr_block < longest_extent.start + longest_extent.count){
 		curr_byte = ((char *)fs->image)[fs->sb->block_bitmap.start * A1FS_BLOCK_SIZE + (curr_block) / 8];
 		for(int i = curr_block % 8; i < 8 && curr_block < longest_extent.start + longest_extent.count; i++){ 
-			// loop from last_block + 1 to 7 as that represents the 8 bits in byte
+			// don't even need if statement because we verified it above
 			if((curr_byte & (1 << i)) == 0){
 				set_bitmap(fs->sb->block_bitmap.start, curr_block, fs, true);
 				curr_block += 1;

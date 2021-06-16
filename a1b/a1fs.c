@@ -337,8 +337,8 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
 			// Each block can fit a max of 16 dentries. however if we are looking at the last block
 			// it may not have 16 entries
-			if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1){
-				num_entries_in_block = final_inode->size % (A1FS_BLOCK_SIZE / sizeof(a1fs_dentry));
+			if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1 &&  final_inode->size % A1FS_BLOCK_SIZE != 0 ){
+				num_entries_in_block = (final_inode->size % A1FS_BLOCK_SIZE) / sizeof(a1fs_dentry);
 			}
 			for(uint32_t k = 0; k < num_entries_in_block; k ++){
 				curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
@@ -521,8 +521,8 @@ static int a1fs_truncate(const char *path, off_t size)
 
 	//TODO: set new file size, possibly "zeroing out" the uninitialized range
 	if((uint64_t)size < file_inode->size){
-		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE;
-		uint32_t target_num_removed_blocks = file_inode->size < (uint64_t)size + bytes_in_last_block ? 0:\
+		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE == 0 ? A1FS_BLOCK_SIZE : file_inode->size % A1FS_BLOCK_SIZE;
+		uint32_t target_num_removed_blocks = file_inode->size <= (uint64_t)size + bytes_in_last_block ? 0:\
 		(file_inode->size - size - bytes_in_last_block) / A1FS_BLOCK_SIZE + 1; // +1 for the last block
 		fs->sb->free_blocks_count -= target_num_removed_blocks;
 		
@@ -539,7 +539,8 @@ static int a1fs_truncate(const char *path, off_t size)
 	
 	// have to extend the file size
 	else{
-		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE;
+		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE == 0 && \
+			file_inode->size != 0 ? A1FS_BLOCK_SIZE : file_inode->size % A1FS_BLOCK_SIZE;
 		uint32_t nonallocated_bytes_last_block = file_inode->size == 0 ? 0: A1FS_BLOCK_SIZE - bytes_in_last_block;
 		uint32_t total_additional_bytes = size - file_inode->size;
 		uint32_t additional_blocks = total_additional_bytes <= nonallocated_bytes_last_block ? 0:\
