@@ -136,7 +136,7 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
 							sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 
-						return 0; // sucess
+						return 0; // success
 					}
 				}
 
@@ -174,8 +174,6 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 }
 
 
-
-
 /**
  * Helper function which intializes and creates an inode wether that be a directory or 
  * a file
@@ -197,7 +195,7 @@ int init_inode(const char *path, mode_t mode, fs_ctx *fs){
 	a1fs_inode *inode = calloc(1, sizeof(a1fs_inode));
 	if(inode == NULL)
 		return -ENOMEM;
-
+	bool is_dir =  S_ISREG(mode) ? false : true;
 	inode->mode = mode;
 	inode->links = S_ISREG(mode) ? 1 : 2; // default links for a file or directory
 	inode->size = 0;
@@ -221,7 +219,7 @@ int init_inode(const char *path, mode_t mode, fs_ctx *fs){
 	strcpy(parent_path, path);
 	set_parent_path(parent_path);
 
-	if(add_dir_entry(parent_path, new_dir_dentry, fs, true) < 0){
+	if(add_dir_entry(parent_path, new_dir_dentry, fs, is_dir) < 0){
 		free(inode);
 		free(new_dir_dentry);
 		return -ENOSPC; // couldn't allocate a dir_entry
@@ -436,6 +434,22 @@ static int a1fs_mkdir(const char *path, mode_t mode)
 static int a1fs_rmdir(const char *path)
 {
 	fs_ctx *fs = get_fs();
+	int dir_ino = path_lookup(path, fs); // can assume this succeeds due to precondition
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + dir_ino * sizeof(a1fs_inode));
+
+	if(inode->size != 0)
+		return -ENOTEMPTY;
+
+	set_bitmap(fs->sb->inode_bitmap.start, dir_ino, fs, false); // deallocate the inode
+
+	// now we have to remove this file from it's parent as a dentry and 
+	char parent_path[strlen(path)];
+	strcpy(parent_path, path);
+	set_parent_path(parent_path); // set the parent_path to the path of the parent
+	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove
+	long inode_num = path_lookup(parent_path, fs); // don't have to error check due to precondition
+	
+	return remove_dir_entry(inode_num, file_name, true, fs);
 
 	//TODO: remove the directory at given path (only if it's empty)
 	(void)path;
@@ -488,11 +502,20 @@ static int a1fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 static int a1fs_unlink(const char *path)
 {
 	fs_ctx *fs = get_fs();
+	a1fs_truncate(path, 0); // will deallocate any blocks associated with this file
+	int dir_ino = path_lookup(path, fs); // can assume this succeeds due to precondition
+	set_bitmap(fs->sb->inode_bitmap.start, dir_ino, fs, false); // deallocate the inode
 
-	//TODO: remove the file at given path
-	(void)path;
-	(void)fs;
-	return -ENOSYS;
+	// now we have to remove this file from it's parent as a dentry and 
+	char parent_path[strlen(path)];
+	strcpy(parent_path, path);
+	set_parent_path(parent_path); // set the parent_path to the path of the parent
+	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove
+	long inode_num = path_lookup(parent_path, fs); // don't have to error check due to precondition
+	
+	remove_dir_entry(inode_num, file_name, false, fs);
+	return 0;
+
 }
 
 
@@ -560,9 +583,9 @@ static int a1fs_truncate(const char *path, off_t size)
 	a1fs_extent *final_extent; 
 
 	//TODO: set new file size, possibly "zeroing out" the uninitialized range
-	if((uint64_t)size < file_inode->size){
+	if((uint64_t)size <= file_inode->size){
 		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE == 0 ? A1FS_BLOCK_SIZE : file_inode->size % A1FS_BLOCK_SIZE;
-		uint32_t target_num_removed_blocks = file_inode->size <= (uint64_t)size + bytes_in_last_block ? 0:\
+		uint32_t target_num_removed_blocks = file_inode->size < (uint64_t)size + bytes_in_last_block ? 0:\
 		(file_inode->size - size - bytes_in_last_block) / A1FS_BLOCK_SIZE + 1; // +1 for the last block
 		fs->sb->free_blocks_count -= target_num_removed_blocks;
 		
