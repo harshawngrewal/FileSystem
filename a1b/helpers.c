@@ -69,11 +69,72 @@ long find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs){
 }
 
 /**
+ * Given the parent node number, remove the directory with name target name
+ * and deallocate the inode number of the sub file/dir 
+ * 
+ * @param inode_num		the inode number of the parent directory
+ * @param target_name the name of the target file or directory
+ * @param is_dir 			true iff the target_name is a dir and not a file(effects parent inode modification)
+ * @param fs					the file system struct
+ * 
+ * NOTE: we can assume that target_name exists
+ * @return      	0 
+ */
+int remove_dir_entry(uint32_t inode_num, char *target_name, bool is_dir, fs_ctx *fs){
+	// return 0;
+	// We can calculate the number of entries this directory has
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	a1fs_extent *curr_extent; 
+	a1fs_dentry *curr_dentry; // The current entry we are looking at
+
+	// First we check the 10 direct extent blocks then the indirect block 
+	// We are checking 522 which is more than needed
+	for(uint32_t i = 0; i < inode->num_extents; i++){
+		if(i < 10)
+			curr_extent = &inode->extents[i];
+		else
+			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+		// if the count is <= 0 is implies that there is no in use extent in that location
+
+		if(curr_extent->count > 0){
+			// this extent is valid and is not empty
+			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+				// Each block can fit a max of 16 dentries. Need to check if any match the target
+				for(int k = 0; k < 16; k ++){
+					curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
+					
+					if(curr_dentry->ino > 0 && strcmp(target_name, curr_dentry->name) == 0){
+						inode->size -= sizeof(a1fs_dentry);
+						clock_gettime(CLOCK_REALTIME, &inode->mtime); // update the modification time
+
+						if(is_dir){
+							inode->links -= 1; // this should only be done if dentry is a dir 
+						}
+						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+							sizeof(a1fs_inode), inode, sizeof(a1fs_inode));
+						
+						curr_dentry->ino = 0; // will mark this location as open to use
+						memcpy(fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry), curr_dentry, sizeof(a1fs_dentry));
+				
+						return 0;
+					}
+
+				
+				}
+
+			}
+		}
+	}
+
+	return -1; // could not find the dentry. This is not possible due to precondition
+}
+
+/**
  *
  * @param path	the absolute path of the file or directory
  * @param fs					the file system struct
  * 
- * @return      		the inode of the file or directory specified in path 
+ * @return      		the inode number of the file or directory specified in path 
  * 									or -error is something goes wrong(eg. path component is too long)
  */
 long path_lookup(const char *path, fs_ctx *fs){
@@ -170,9 +231,9 @@ void set_bitmap(uint32_t bitmap_block, uint32_t offset, fs_ctx *fs , bool set){
 	// modify a byte and the re write
 	char byte = ((char *)fs->image)[bitmap_block * A1FS_BLOCK_SIZE + offset / 8];
 	if(set)
-		byte = byte | (x << offset % 8); // flip bit to 1
+		byte = byte | (1 << offset % 8); // flip bit to 1
 	else
-		byte = byte & (x << offset % 8); // flip bit to 0
+		byte = byte & ~(1 << offset % 8); // flip bit to 0
 
 
 	memcpy(fs->image + bitmap_block * A1FS_BLOCK_SIZE + offset / 8, &byte, sizeof(char));
@@ -383,7 +444,7 @@ int deallocate_block( a1fs_inode *inode, fs_ctx *fs){
 
 	// neeed to update block bitmap to show that final_block is now free to use
 	set_bitmap(fs->sb->block_bitmap.start, final_block, fs, false);
-	final_extent->count -= 1;;
+	final_extent->count -= 1;
 
 	// have to rewrite this extent back to the disk
 	if (inode->num_extents <= 10)
