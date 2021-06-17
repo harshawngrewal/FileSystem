@@ -709,12 +709,39 @@ static int a1fs_read(const char *path, char *buf, size_t size, off_t offset,
 	fs_ctx *fs = get_fs();
 
 	//TODO: read data from the file at given offset into the buffer
-	(void)path;
-	(void)buf;
-	(void)size;
-	(void)offset;
-	(void)fs;
-	return -ENOSYS;
+	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	uint32_t block_offset = offset / A1FS_BLOCK_SIZE;
+	uint32_t byte_offset = offset % A1FS_BLOCK_SIZE;
+	a1fs_extent *curr_extent; 
+	uint32_t count = 0; // will keep track of which how many blocks are have passed
+	uint32_t starting_block_num;
+
+	// load inode again because possible changes were made due to truncate
+	inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	for(uint32_t i = 0; i < inode->num_extents; i++){
+		if(i < 10)
+			curr_extent = &inode->extents[i];
+		else
+			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+
+		// if the count is <= 0 is implies that there is no in use extent in that location
+		if (count + curr_extent->count - 1 >= block_offset){
+			starting_block_num = curr_extent->start + block_offset - count;
+			count = block_offset;
+			break;
+		}
+		else
+			count += curr_extent->count;
+	}
+
+	// we read as much as possible and fill the rest of the buffer up with 0s;
+	memcpy(buf, fs->image + starting_block_num * A1FS_BLOCK_SIZE + byte_offset, \
+		min(A1FS_BLOCK_SIZE - byte_offset, size));
+	memset(buf + min(A1FS_BLOCK_SIZE - byte_offset, size), 0, size - min(A1FS_BLOCK_SIZE - byte_offset, size));
+
+
+	return min(A1FS_BLOCK_SIZE - byte_offset, size);
 }
 
 /**
