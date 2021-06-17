@@ -185,6 +185,10 @@ int remove_dir_entry(char *path, char *target_name, bool is_dir, fs_ctx *fs){
 							 * sizeof(a1fs_dentry), last_dentry, sizeof(a1fs_dentry));
 
 						a1fs_truncate(path, inode->size - sizeof(a1fs_dentry)); // this should not fail in cases where we are decreasing size
+							
+						// we want to grab it again since we made some changes to its fields
+						inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
+							A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode)); 
 
 						if(is_dir){
 							inode->links -= 1; // this should only be done if dentry is a dir 
@@ -761,17 +765,19 @@ static int a1fs_write(const char *path, const char *buf, size_t size,
 	uint32_t count = 0; // will keep track of which how many blocks are have passed
 	uint32_t starting_block_num;
 
-
-	for(uint32_t i = 0; i < inode->num_extents && count  < block_offset; i++){
+	// load inode again because possible changes were made due to truncate
+	inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	for(uint32_t i = 0; i < inode->num_extents; i++){
 		if(i < 10)
 			curr_extent = &inode->extents[i];
 		else
 			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
 
 		// if the count is <= 0 is implies that there is no in use extent in that location
-		if (count + curr_extent->count >= block_offset){
-			starting_block_num = curr_extent->start + block_offset - count - 1;
+		if (count + curr_extent->count - 1 >= block_offset){
+			starting_block_num = curr_extent->start + block_offset - count;
 			count = block_offset;
+			break;
 		}
 		else
 			count += curr_extent->count;
