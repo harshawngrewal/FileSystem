@@ -105,44 +105,6 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
 	a1fs_inode *parent_inode = (a1fs_inode *)(fs->image + fs->inode_table.start *\
 		A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
-	a1fs_extent *curr_extent; 
-	a1fs_dentry *curr_dentry; // The current entry we are looking at
-	
-	// have to loop every single block and every single dentry to find any empty location
-	// if we can't find an empty location we use truncate to extend the file
-	for(uint32_t i = 0; i < parent_inode->num_extents; i++){
-		if(i < 10)
-			curr_extent = &parent_inode->extents[i];
-		else
-			curr_extent = (a1fs_extent *) (fs->image + parent_inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
-		// if the count is <= 0 is implies that there is no in use extent in that location
-
-		if(curr_extent->count > 0){
-			// this extent is valid and is not empty
-			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
-				// we act like there are 16 dentries because we null blocks before we allocate a block to a inode extent
-				for(int k = 0; k < 16; k ++){
-					curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
-					
-					if(curr_dentry->ino == 0){
-						// we found a dentry that is not in sue
-						memcpy(fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry), new_dir_dentry, sizeof(a1fs_dentry));
-						parent_inode->size += sizeof(a1fs_dentry);
-						if(is_dir){
-							parent_inode->links += 1; // this should only be done if dentry is a dir 
-						}
-
-						clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
-						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
-							sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
-
-						return 0; // success
-					}
-				}
-
-			}
-		}
-	}
 
 	// otherwise we are going to have allocate another block, maybe another extent and maybe even indirect
 	// block, so we use out truncate method as it does that for us
@@ -165,12 +127,85 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 	if(is_dir){
 		parent_inode->links += 1; // this should only be done if dentry is a dir 
 	}
-
+	parent_inode->size += sizeof(a1fs_dentry);
 	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
 	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
 		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 
 	return 0;
+}
+
+/**
+ * Given the parent node number, remove the directory with name target name
+ * and deallocate the inode number of the sub file/dir 
+ * 
+ * @param inode_num		the inode number of the parent directory
+ * @param target_name the name of the target file or directory
+ * @param is_dir 			true iff the target_name is a dir and not a file(effects parent inode modification)
+ * @param fs					the file system struct
+ * 
+ * NOTE: we can assume that target_name exists
+ * @return      	0 
+ */
+int remove_dir_entry(char *path, char *target_name, bool is_dir, fs_ctx *fs){
+	// return 0;
+	// We can calculate the number of entries this directory has
+	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+	a1fs_extent *curr_extent; 
+	a1fs_dentry *curr_dentry; // The current entry we are looking at
+
+	// First we check the 10 direct extent blocks then the indirect block 
+	// We are checking 522 which is more than needed
+	for(uint32_t i = 0; i < inode->num_extents; i++){
+		if(i < 10)
+			curr_extent = &inode->extents[i];
+		else
+			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+		// if the count is <= 0 is implies that there is no in use extent in that location
+
+		if(curr_extent->count > 0){
+			// this extent is valid and is not empty
+			for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
+				// Each block can fit a max of 16 dentries. Need to check if any match the target
+				for(int k = 0; k < 16; k ++){
+					curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
+					
+					if(curr_dentry->ino > 0 && strcmp(target_name, curr_dentry->name) == 0){
+						uint32_t entries_in_last_block = inode->size % A1FS_BLOCK_SIZE == 0 ? \
+							A1FS_BLOCK_SIZE / sizeof(a1fs_dentry) : (inode->size % A1FS_BLOCK_SIZE) / sizeof(a1fs_dentry);
+						a1fs_extent *last_extent = get_final_extent(inode, fs);
+						uint32_t last_block = last_extent->start + last_extent->count - 1;
+						a1fs_dentry *last_dentry = (a1fs_dentry *) (fs->image + last_block * A1FS_BLOCK_SIZE + (entries_in_last_block - 1) * sizeof(a1fs_dentry));
+
+						// we replace the dentry with the last dentry. Think we shrink the inode size 
+						if(last_dentry->ino != curr_dentry->ino)
+							memcpy(fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry), last_dentry, sizeof(a1fs_dentry));
+						
+						last_dentry->ino = 0; // we are going to rewrite this back so that we don't read it during readdir
+						memcpy(fs->image + last_block * A1FS_BLOCK_SIZE +  (entries_in_last_block - 1)\
+							 * sizeof(a1fs_dentry), last_dentry, sizeof(a1fs_dentry));
+
+						a1fs_truncate(path, inode->size - sizeof(a1fs_dentry)); // this should not fail in cases where we are decreasing size
+				
+						inode->size -= sizeof(a1fs_dentry);
+						clock_gettime(CLOCK_REALTIME, &inode->mtime); // update the modification time
+						if(is_dir){
+							inode->links -= 1; // this should only be done if dentry is a dir 
+						}
+						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+							sizeof(a1fs_inode), inode, sizeof(a1fs_inode));
+				
+						return 0;
+					}
+
+				}
+
+			}
+		}
+	}
+
+	return -1; // could not find the dentry. This is not possible due to precondition
 }
 
 
@@ -375,9 +410,9 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
 			// Each block can fit a max of 16 dentries. however if we are looking at the last block
 			// it may not have 16 entries
-			if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1 &&  final_inode->size % A1FS_BLOCK_SIZE != 0 ){
-				num_entries_in_block = (final_inode->size % A1FS_BLOCK_SIZE) / sizeof(a1fs_dentry);
-			}
+			// if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1 &&  final_inode->size % A1FS_BLOCK_SIZE != 0 ){
+			// 	num_entries_in_block = (final_inode->size % A1FS_BLOCK_SIZE) / sizeof(a1fs_dentry);
+			// }
 			for(uint32_t k = 0; k < num_entries_in_block; k ++){
 				curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
 				
@@ -446,10 +481,8 @@ static int a1fs_rmdir(const char *path)
 	char parent_path[strlen(path)];
 	strcpy(parent_path, path);
 	set_parent_path(parent_path); // set the parent_path to the path of the parent
-	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove
-	long inode_num = path_lookup(parent_path, fs); // don't have to error check due to precondition
-	
-	return remove_dir_entry(inode_num, file_name, true, fs);
+	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove	
+	return remove_dir_entry(parent_path, file_name, true, fs);
 
 	//TODO: remove the directory at given path (only if it's empty)
 	(void)path;
@@ -510,10 +543,8 @@ static int a1fs_unlink(const char *path)
 	char parent_path[strlen(path)];
 	strcpy(parent_path, path);
 	set_parent_path(parent_path); // set the parent_path to the path of the parent
-	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove
-	long inode_num = path_lookup(parent_path, fs); // don't have to error check due to precondition
-	
-	remove_dir_entry(inode_num, file_name, false, fs);
+	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove	
+	remove_dir_entry(parent_path, file_name, false, fs);
 	return 0;
 
 }
@@ -587,7 +618,6 @@ static int a1fs_truncate(const char *path, off_t size)
 		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE == 0 ? A1FS_BLOCK_SIZE : file_inode->size % A1FS_BLOCK_SIZE;
 		uint32_t target_num_removed_blocks = file_inode->size < (uint64_t)size + bytes_in_last_block ? 0:\
 		(file_inode->size - size - bytes_in_last_block) / A1FS_BLOCK_SIZE + 1; // +1 for the last block
-		fs->sb->free_blocks_count -= target_num_removed_blocks;
 		
 		if(target_num_removed_blocks > 0){
 			while(target_num_removed_blocks > 0){
@@ -633,7 +663,6 @@ static int a1fs_truncate(const char *path, off_t size)
 			additional_blocks -= max_extentsion;	
 			// now we allocate the new extents
 			while(additional_blocks > 0){
-
 				// edge cases needs to be tested
 				if((file_inode->num_extents + 1 == 10 && additional_blocks + 1 > fs->sb->free_blocks_count) || file_inode->num_extents > 512){
 						// have to reverse the changes we made by calling truncate recrusively
@@ -648,9 +677,6 @@ static int a1fs_truncate(const char *path, off_t size)
 		}
 	}
 
-	// rwe rewrite inode since we update size of file and also any changed to fields like num_extents, indirect_block
-	file_inode->size = size;
-	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
 	return 0;
 
 }
