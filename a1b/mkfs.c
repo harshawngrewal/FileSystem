@@ -138,6 +138,7 @@ bool init_block_bitmap(a1fs_superblock *sb){
  */
 static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 {
+	memset(image, 0, size); // to ensure that our disk can be properly formatted
 	//TODO: initialize the superblock and create an empty root directory
 	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
 	char byte;

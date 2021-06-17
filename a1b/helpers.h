@@ -5,7 +5,6 @@ uint32_t min(uint32_t num1, uint32_t num2);
 uint32_t max(uint32_t num1, uint32_t num2);
 
 long find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs);
-int remove_dir_entry(uint32_t inode_num, char *target_name, bool is_dir, fs_ctx *fs);
 long path_lookup(const char *path, fs_ctx *fs);
 
 a1fs_extent * get_final_extent(a1fs_inode * file_inode, fs_ctx *fs);
