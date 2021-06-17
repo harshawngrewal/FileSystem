@@ -17,7 +17,7 @@
  */
 
 #include "fs_ctx.h"
-#include "a1fs.h" // do not know if I am allowed to add include statements
+#include "a1fs.h" 
 
 
 bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
@@ -27,7 +27,7 @@ bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
 	//TODO: check if the file system image can be mounted and initialize its runtime state
 	// Need to things like whether the file system is valid 
 
-	a1fs_superblock *sb = (a1fs_superblock *)(fs->image); // Should I just store the entire superblock as reference
+	a1fs_superblock *sb = (a1fs_superblock *)(fs->image);
 	fs->sb = sb;
 	if(sb->magic != A1FS_MAGIC)
 		return false; // this disk is not formatted using the file system specified
