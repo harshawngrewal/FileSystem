@@ -344,7 +344,7 @@ static int a1fs_getattr(const char *path, struct stat *st)
 	st->st_mode = final_inode->mode;
 	st->st_nlink = final_inode->links;
 	st->st_size = final_inode->size; // does size include inode
-	st->st_blocks = st->st_size % 512 != 0 ? st->st_size  / 512 + 1 + A1FS_BLOCK_SIZE / 512  : st->st_size  / 512 + A1FS_BLOCK_SIZE / 512; // not sure about this.
+	st->st_blocks = (final_inode->num_extents > 0 + ceil_integer_division(st->st_size, A1FS_BLOCK_SIZE))* A1FS_BLOCK_SIZE / 512;
 	st->st_mtim = final_inode->mtime; 
 
 	return 0; 
