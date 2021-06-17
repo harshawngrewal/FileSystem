@@ -126,11 +126,9 @@ int add_dir_entry(char *path, a1fs_dentry *new_dir_dentry, fs_ctx *fs, bool is_d
 
 	if(is_dir){
 		parent_inode->links += 1; // this should only be done if dentry is a dir 
+		memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+			sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 	}
-	parent_inode->size += sizeof(a1fs_dentry);
-	clock_gettime(CLOCK_REALTIME, &parent_inode->mtime); // update the modification time
-	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
-		sizeof(a1fs_inode), parent_inode, sizeof(a1fs_inode));
 
 	return 0;
 }
@@ -187,14 +185,12 @@ int remove_dir_entry(char *path, char *target_name, bool is_dir, fs_ctx *fs){
 							 * sizeof(a1fs_dentry), last_dentry, sizeof(a1fs_dentry));
 
 						a1fs_truncate(path, inode->size - sizeof(a1fs_dentry)); // this should not fail in cases where we are decreasing size
-				
-						inode->size -= sizeof(a1fs_dentry);
-						clock_gettime(CLOCK_REALTIME, &inode->mtime); // update the modification time
+
 						if(is_dir){
 							inode->links -= 1; // this should only be done if dentry is a dir 
+							memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
+								sizeof(a1fs_inode), inode, sizeof(a1fs_inode));
 						}
-						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * \
-							sizeof(a1fs_inode), inode, sizeof(a1fs_inode));
 				
 						return 0;
 					}
@@ -483,11 +479,6 @@ static int a1fs_rmdir(const char *path)
 	set_parent_path(parent_path); // set the parent_path to the path of the parent
 	char *file_name = get_last_component(path); // gets the relative name of the dir we want to remove	
 	return remove_dir_entry(parent_path, file_name, true, fs);
-
-	//TODO: remove the directory at given path (only if it's empty)
-	(void)path;
-	(void)fs;
-	return -ENOSYS;
 }
 
 
@@ -676,9 +667,13 @@ static int a1fs_truncate(const char *path, off_t size)
 			}
 		}
 	}
+	
+	file_inode->size = size;
+	clock_gettime(CLOCK_REALTIME, &file_inode->mtime); // update the modification time
+	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * \
+		sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
 
 	return 0;
-
 }
 
 
@@ -750,12 +745,40 @@ static int a1fs_write(const char *path, const char *buf, size_t size,
 
 	//TODO: write data from the buffer into the file at given offset, possibly
 	// "zeroing out" the uninitialized range
-	(void)path;
-	(void)buf;
-	(void)size;
-	(void)offset;
-	(void)fs;
-	return -ENOSYS;
+	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
+	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
+
+	// can assume that end up allocating at most one more block
+	// can also assume that the offset(start of writing) + size will be within the same block
+	if(offset + size > inode->size){
+			long res = a1fs_truncate(path, offset + size);
+			if (res < 0)
+				return res; // error 
+	}
+	uint32_t block_offset = offset / A1FS_BLOCK_SIZE;
+	uint32_t byte_offset = offset % A1FS_BLOCK_SIZE;
+	a1fs_extent *curr_extent; 
+	uint32_t count = 0; // will keep track of which how many blocks are have passed
+	uint32_t starting_block_num;
+
+
+	for(uint32_t i = 0; i < inode->num_extents && count  < block_offset; i++){
+		if(i < 10)
+			curr_extent = &inode->extents[i];
+		else
+			curr_extent = (a1fs_extent *) (fs->image + inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
+
+		// if the count is <= 0 is implies that there is no in use extent in that location
+		if (count + curr_extent->count >= block_offset){
+			starting_block_num = curr_extent->start + block_offset - count - 1;
+			count = block_offset;
+		}
+		else
+			count += curr_extent->count;
+	}
+
+	memcpy(fs->image +  starting_block_num * A1FS_BLOCK_SIZE + byte_offset, buf, size);
+	return size;
 }
 
 static struct fuse_operations a1fs_ops = {
