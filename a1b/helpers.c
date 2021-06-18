@@ -26,20 +26,23 @@ uint32_t ceil_integer_division(uint32_t num1, uint32_t num2){
 }
 
 /**
- * Given the parent node, scan the dentries for the the entry which 
- * @param path				the absolute path of the file or directory
+ * Given the parent ino, scan the dentries for the the entry  
+ * @param inode_num		the inode number of the parent directory
  * @param target_name the name of the target file or directory
  * @param fs					the file system struct
  * 
- * NOTE: we can assume that now two dentries have the same name
- * @return      		the inode number of the target sub dir or -1 on error
+ * NOTE:							we can assume that no two dentries have the same name
+ * @return      			the inode number of the target dentry or -error(eg ENOtENT ENOTDIR)
  */
 long find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs){
-	// return 0;
 	// We can calculate the number of entries this directory has
 	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
 	a1fs_extent *curr_extent; 
 	a1fs_dentry *curr_dentry; // The current entry we are looking at
+
+	if(S_ISREG(inode->mode))
+		return -ENOTDIR; // can't apply find_dir_entry on a file
+
 
 	// First we check the 10 direct extent blocks then the indirect block 
 	// We are checking 522 which is more than needed
@@ -65,12 +68,12 @@ long find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs){
 		}
 	}
 
-	return -1; // could not find the dentry 
+	return -ENOENT; // could not find the dentry 
 }
 
 
 /**
- *
+ * Return the inode number corresponding to the given path
  * @param path	the absolute path of the file or directory
  * @param fs					the file system struct
  * 
@@ -80,7 +83,6 @@ long find_dir_entry(uint32_t inode_num, char *target_name, fs_ctx *fs){
 long path_lookup(const char *path, fs_ctx *fs){
 	if (strlen(path) >= A1FS_PATH_MAX) return -ENAMETOOLONG;
 	if(path[0] != '/') {
-		fprintf(stderr, "Not an absolute path\n");
 		return -ENOTDIR; // there is not refernce to the root node in the path
   }
 
@@ -94,9 +96,8 @@ long path_lookup(const char *path, fs_ctx *fs){
 			return -ENAMETOOLONG; 
 
 		curr_node = find_dir_entry(curr_node, stringp, fs);
-		if (curr_node == -1){
-				fprintf(stderr, "An element in the path cannot be found\n");
-				return -ENOENT;
+		if (curr_node < 0){
+				return curr_node; // error
 		}
 		stringp = strsep(&path_copy, "/");
 	}
@@ -109,17 +110,12 @@ long path_lookup(const char *path, fs_ctx *fs){
 			curr_node = find_dir_entry(curr_node, stringp, fs);	// the path is not the root node
 	}
 
-	if (curr_node == -1){
-			fprintf(stderr, "An element in the path cannot be found\n");
-			return -ENOENT;
-	}
-
-	return curr_node;
+	return curr_node; // could be an error message or a valid inode number
 }
 
 
 /**
- * given the file inode, return the last extent
+ * Given the file inode, return the last extent of that inode
  * @param file_inode	the inode of a file or dir
  * @param fs					the file system struct
  * 
@@ -140,7 +136,7 @@ a1fs_extent * get_final_extent(a1fs_inode * file_inode, fs_ctx *fs){
 }
 
 /**
- * flip the bit to either 0 or 1 for the given bitmap at the given location
+ * Flip the bit to either 0 or 1 for the given bitmap at the given location
  *
  * @param bitmap_block	the data block number of the bitmap
  * @param offset				the number of bits into the bitmap	
@@ -187,7 +183,7 @@ void set_bitmap(uint32_t bitmap_block, uint32_t offset, fs_ctx *fs , bool set){
 
 
 /**
- * allocate the first useable inode possible in the inode bitmap
+ * find the first unused inode in the inode table
  * @param fs  file system struct
  * @return       the inode allocated on success;
  *               -1 on error
@@ -208,7 +204,7 @@ long allocate_inode(fs_ctx *fs){
 		}
 	}
 
-	return -1;
+	return -1; // inode table is full
 }
 
 long allocate_block(fs_ctx *fs){
@@ -286,12 +282,11 @@ uint32_t extend_extent(uint32_t max_blocks, a1fs_inode *inode, a1fs_extent *exte
  *
  * @param max_blocks	the maximum number of blocks we want the extent to have
  * @param inode				the file's inode which we want to extend
- * @param extent			the extent struct which we want to extend			
  * @param fs					the file system struct
  * 
- * NOTE: Assumed that there is at least one free block
- * @return      		the number of blocks that newly allocated extent has
- * 									-error if extent can't be allocated
+ * NOTE: 							Assumed that there is at least one free block
+ * @return      			the number of blocks that newly allocated extent has
+ * 										-error if extent can't be allocated
  */
 long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 	/* find starting block for the longest contigious number of blocks(but <= max_blocks)

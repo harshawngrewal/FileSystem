@@ -388,8 +388,6 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	filler(buf, "." , NULL, 0);
 	filler(buf, "..", NULL, 0);
 
-	//TODO: lookup the directory inode for given path and iterate through its
-	// directory entries
 	fs_ctx *fs = get_fs();
 	long curr_node = path_lookup(path, fs); // can assume that path exists
 
@@ -405,14 +403,8 @@ static int a1fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		else
 			curr_extent = (a1fs_extent *) (fs->image + final_inode->indirect * sizeof(A1FS_BLOCK_SIZE) + (i - 10) * sizeof(a1fs_extent));
 
-
 		// this extent is valid
 		for (a1fs_blk_t j = curr_extent->start; j < curr_extent->start + curr_extent->count; j ++){
-			// Each block can fit a max of 16 dentries. however if we are looking at the last block
-			// it may not have 16 entries
-			// if(i == final_inode->num_extents - 1 && j == curr_extent->start + curr_extent->count - 1 &&  final_inode->size % A1FS_BLOCK_SIZE != 0 ){
-			// 	num_entries_in_block = (final_inode->size % A1FS_BLOCK_SIZE) / sizeof(a1fs_dentry);
-			// }
 			for(uint32_t k = 0; k < num_entries_in_block; k ++){
 				curr_dentry = (a1fs_dentry *) (fs->image + j * A1FS_BLOCK_SIZE + k * sizeof(a1fs_dentry));
 				
@@ -564,9 +556,6 @@ static int a1fs_unlink(const char *path)
  */
 static int a1fs_utimens(const char *path, const struct timespec times[2])
 {
-	//TODO: update the modification timestamp (mtime) in the inode for given
-	// path with either the time passed as argument or the current time,
-	// according to the utimensat man page
 
 	fs_ctx *fs = get_fs();
 
@@ -579,7 +568,8 @@ static int a1fs_utimens(const char *path, const struct timespec times[2])
 	else if(times[1].tv_nsec != UTIME_OMIT)
 		file_inode->mtime = times[1];
 	
-	// otherwise we do nothing
+	// write the updated file inode back to the disk
+	memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
 	return 0;
 }
 
@@ -611,7 +601,6 @@ static int a1fs_truncate(const char *path, off_t size)
 	if((uint64_t)size == file_inode->size)
 		return 0; // no modification should be made
 
-	//TODO: set new file size, possibly "zeroing out" the uninitialized range
 	if((uint64_t)size < file_inode->size){
 		uint32_t bytes_in_last_block = file_inode->size % A1FS_BLOCK_SIZE == 0 ? A1FS_BLOCK_SIZE : file_inode->size % A1FS_BLOCK_SIZE;
 		uint32_t target_num_removed_blocks = file_inode->size < (uint64_t)size + bytes_in_last_block ? 0:\
@@ -624,6 +613,7 @@ static int a1fs_truncate(const char *path, off_t size)
 			// it can be that case that the indirect block is not longer in use
 			if(file_inode->num_extents <= 10 && file_inode->indirect != 0){
 				set_bitmap(fs->sb->block_bitmap.start, file_inode->indirect, fs, false);
+				file_inode->indirect = 0; // not using an indirect block
 			}
 		}
 	}
@@ -637,7 +627,7 @@ static int a1fs_truncate(const char *path, off_t size)
 		uint32_t additional_blocks = total_additional_bytes <= nonallocated_bytes_last_block ? 0:\
 		 ceil_integer_division(total_additional_bytes - nonallocated_bytes_last_block, A1FS_BLOCK_SIZE);
 
-		 uint32_t copy_additional_blocks = additional_blocks;
+		uint32_t copy_additional_blocks = additional_blocks;
 
 		if(additional_blocks > fs->sb->free_blocks_count)
 			return -ENOSPC; // not enough data blocks for the new size of file
@@ -662,7 +652,7 @@ static int a1fs_truncate(const char *path, off_t size)
 			// now we allocate the new extents
 			while(additional_blocks > 0){
 				// edge cases needs to be tested
-				if((file_inode->num_extents + 1 == 10 && additional_blocks + 1 > fs->sb->free_blocks_count) || file_inode->num_extents > 512){
+				if((file_inode->num_extents + 1 == 10 && additional_blocks + 1 > fs->sb->free_blocks_count) || file_inode->num_extents + 1 > 512){
 						// have to reverse the changes we made by calling truncate recrusively
 						file_inode->size = file_inode->size + (copy_additional_blocks - additional_blocks) * A1FS_BLOCK_SIZE + nonallocated_bytes_last_block;
 						memcpy(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + file_inode_num * sizeof(a1fs_inode), file_inode, sizeof(a1fs_inode));
@@ -711,7 +701,6 @@ static int a1fs_read(const char *path, char *buf, size_t size, off_t offset,
 	(void)fi;// unused
 	fs_ctx *fs = get_fs();
 
-	//TODO: read data from the file at given offset into the buffer
 	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
 	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
 	uint32_t block_offset = offset / A1FS_BLOCK_SIZE;
@@ -720,7 +709,6 @@ static int a1fs_read(const char *path, char *buf, size_t size, off_t offset,
 	uint32_t count = 0; // will keep track of which how many blocks are have passed
 	uint32_t starting_block_num = 0; // default value
 
-	// load inode again because possible changes were made due to truncate
 	inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
 	for(uint32_t i = 0; i < inode->num_extents; i++){
 		if(i < 10)
@@ -739,6 +727,7 @@ static int a1fs_read(const char *path, char *buf, size_t size, off_t offset,
 	}
 	if(starting_block_num == 0){
 		memset(buf, 0, size); // read was called beyond the bounds of the file
+		return 0;
 	}
 
 	else{
@@ -748,7 +737,7 @@ static int a1fs_read(const char *path, char *buf, size_t size, off_t offset,
 		memset(buf + min(A1FS_BLOCK_SIZE - byte_offset, size), 0, size - min(A1FS_BLOCK_SIZE - byte_offset, size));
 	}
 
-	return min(A1FS_BLOCK_SIZE - byte_offset, size); // how much we wrote
+	return min(A1FS_BLOCK_SIZE - byte_offset, size); // how much we read
 }
 
 /**
@@ -781,8 +770,7 @@ static int a1fs_write(const char *path, const char *buf, size_t size,
 	(void)fi;// unused
 	fs_ctx *fs = get_fs();
 
-	//TODO: write data from the buffer into the file at given offset, possibly
-	// "zeroing out" the uninitialized range
+
 	long inode_num = path_lookup(path, fs); // don't have to error check due to precondition
 	a1fs_inode* inode = (a1fs_inode *)(fs->image + fs->inode_table.start * A1FS_BLOCK_SIZE + inode_num * sizeof(a1fs_inode));
 
@@ -791,7 +779,7 @@ static int a1fs_write(const char *path, const char *buf, size_t size,
 	if(offset + size > inode->size){
 			long res = a1fs_truncate(path, offset + size);
 			if (res < 0)
-				return res; // error 
+				return res; // error. prob a ENOSPC error 
 	}
 	uint32_t block_offset = offset / A1FS_BLOCK_SIZE;
 	uint32_t byte_offset = offset % A1FS_BLOCK_SIZE;

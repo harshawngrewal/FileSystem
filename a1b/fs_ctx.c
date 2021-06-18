@@ -24,8 +24,6 @@ bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
 {
 	fs->image = image;
 	fs->size = size;
-	//TODO: check if the file system image can be mounted and initialize its runtime state
-	// Need to things like whether the file system is valid 
 
 	a1fs_superblock *sb = (a1fs_superblock *)(fs->image);
 	fs->sb = sb;
@@ -38,6 +36,5 @@ bool fs_ctx_init(fs_ctx *fs, void *image, size_t size)
 
 void fs_ctx_destroy(fs_ctx *fs)
 {
-	//TODO: cleanup any resources allocated in fs_ctx_init()
 	(void)fs;
 }

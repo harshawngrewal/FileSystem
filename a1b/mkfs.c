@@ -139,8 +139,7 @@ bool init_block_bitmap(a1fs_superblock *sb){
 static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 {
 	memset(image, 0, size); // to ensure that our disk can be properly formatted
-	//TODO: initialize the superblock and create an empty root directory
-	//NOTE: the mode of the root directory inode should be set to S_IFDIR | 0777
+
 	char byte;
 	// initialize the super block
 	a1fs_superblock *sb = calloc(1, sizeof(a1fs_superblock));
@@ -181,7 +180,7 @@ static bool mkfs(void *image, size_t size, mkfs_opts *opts)
 	root_dir_inode->indirect = 0; // no indirect block yet
 	root_dir_inode->num_extents = 0; // no extents allocated yet
 
-	memcpy(image + sb->inode_table.start * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(struct a1fs_inode));
+	memcpy(image + sb->inode_table.start * A1FS_BLOCK_SIZE, root_dir_inode, sizeof(a1fs_inode));
 	byte = ((char *)image)[sb->inode_bitmap.start * A1FS_BLOCK_SIZE];
 	byte = byte | (1 << 0);
 	memcpy(image + sb->inode_bitmap.start * A1FS_BLOCK_SIZE, &byte, sizeof(char));
