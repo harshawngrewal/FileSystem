@@ -351,10 +351,7 @@ long allocate_extent(uint32_t max_blocks, a1fs_inode *inode, fs_ctx *fs){
 	inode->num_extents += 1; // we have created a new extent
 
 	if(inode->num_extents == 10){
-		long res = allocate_block(fs);
-		if(res < 0)
-			return res; //abandon operation as we could not allocate and indirect block to store extent
-
+		long res = allocate_block(fs); // can assume this is will return a valid block due to check we made in truncate
 		inode->indirect = res;
 		set_bitmap(fs->sb->block_bitmap.start, res, fs, true);
 	}
