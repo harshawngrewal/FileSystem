@@ -6,7 +6,7 @@ This is a simple extent based file system using the libfuse library
 
 ### First Time Setup
 
-To be able to use FUSE, it must be running in your kernel, so this means that it is not feasible to run the code for this tutorial on your Mac OS, Windows, WSL on Windows. These operating systems have FUSE installed, but they have not turned on the options that allow you to implement your own file system. 
+To be able to use FUSE, it must be running in your kernel, so this means that it is not feasible to run the code for this on your Mac OS, Windows, WSL on Windows. These operating systems have FUSE installed, but they have not turned on the options that allow you to implement your own file system. 
 
 1. Clone this repo using the instructions here [Cloning a repository - GitHub Docs](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository)
 2. On your local machine, go into **/FileSystem/a1b** 
