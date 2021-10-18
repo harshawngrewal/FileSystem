@@ -13,8 +13,10 @@ To be able to use FUSE, it must be running in your kernel, so this means that it
 
 ### Running the Project
 
-1. There is a bash script call runit.sh, you can run it using the command **./runit.sh**. This script creates a disk image and mounts the file system to tmp/grewa309 and so now the file systems commands within that directory will utilize the file system we have defined 
-2. You may have to add executing permissions to the bash script
+1. There is a bash script call runit.sh, you can run it using the command **./runit.sh**. This script creates a disk image and mounts the file system to tmp/grewa309 and runs a couple of simple operations(eg. ls, stat, etc). It then outputs results to your terminal and then unmounts the fie system.
+2. You may have to add executing permissions to the bash script in order to run it
+3. In order to type directly in terminal and try out your own commands look at runit.sh and type the commands directly into you  terminal
 
 ### Link to Demo
+https://youtu.be/eNCgv2v6ULU
 
